@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analisis Rasch untuk Angket Likert</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EEF1F3; --surface:#FFFFFF; --surface-2:#F7F9FA;
+    --ink:#16202B; --ink-soft:#566472; --ink-faint:#8997A3;
+    --line:#D7DEE3; --line-soft:#E7ECEF;
+    --teal:#0B6E78; --teal-deep:#0A565E; --teal-wash:#E2F0F0;
+    --rust:#C24A2E; --rust-wash:#F7E6E0;
+    --ok:#2C7A57; --ok-wash:#E3F0E9;
+    --amber:#B5821F;
+    --shadow:0 1px 2px rgba(22,32,43,.06),0 8px 28px rgba(22,32,43,.06);
+    --mono:"Space Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Inter",system-ui,sans-serif;line-height:1.5;
+    font-size:15px;
+    background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+    background-size:26px 26px;background-position:-1px -1px;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 18px 90px}
+  /* ---------- header ---------- */
+  header.top{padding:38px 0 22px;border-bottom:1px solid var(--line)}
+  .badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);
+    font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal-deep);
+    background:var(--teal-wash);border:1px solid #cfe3e3;padding:4px 10px;border-radius:2px}
+  .badge::before{content:"";width:7px;height:7px;background:var(--teal);border-radius:50%}
+  h1{font-family:"Space Grotesk",sans-serif;font-weight:700;letter-spacing:-.02em;
+    font-size:clamp(30px,5vw,46px);margin:16px 0 6px;line-height:1.02}
+  h1 .scale{color:var(--teal)}
+  .lede{color:var(--ink-soft);max-width:60ch;font-size:15.5px}
+  .lede b{color:var(--ink);font-weight:600}
+  /* ---------- panel ---------- */
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    box-shadow:var(--shadow);margin-top:22px;overflow:hidden}
+  .panel-h{display:flex;align-items:baseline;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+  .panel-h .n{font-family:var(--mono);font-size:12px;color:var(--teal);font-weight:700}
+  .panel-h h2{font-family:"Space Grotesk",sans-serif;font-size:18px;font-weight:600;margin:0;letter-spacing:-.01em}
+  .panel-h .sub{color:var(--ink-faint);font-size:13px;margin-left:auto}
+  .panel-b{padding:20px}
+  /* ---------- input ---------- */
+  textarea{width:100%;min-height:150px;resize:vertical;font-family:var(--mono);font-size:13px;
+    border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--surface-2);color:var(--ink);line-height:1.6}
+  textarea:focus,select:focus,input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+  .opts{display:flex;gap:18px 26px;flex-wrap:wrap;margin:16px 0 4px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:12.5px;color:var(--ink-soft);font-weight:500}
+  .field input[type=text]{font-family:var(--mono);font-size:13px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:170px;background:var(--surface)}
+  .check{flex-direction:row;align-items:center;gap:8px}
+  .check input{width:17px;height:17px;accent-color:var(--teal)}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;align-items:center}
+  button{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14px;cursor:pointer;
+    border-radius:6px;padding:11px 18px;border:1px solid transparent;transition:.15s}
+  .btn-primary{background:var(--teal);color:#fff}
+  .btn-primary:hover{background:var(--teal-deep)}
+  .btn-ghost{background:var(--surface);color:var(--ink);border-color:var(--line)}
+  .btn-ghost:hover{border-color:var(--teal);color:var(--teal-deep)}
+  .file-lbl{font-size:13px;color:var(--ink-soft)}
+  .err{color:var(--rust);font-size:13px;margin-top:10px;font-weight:500}
+  /* ---------- results ---------- */
+  #results{display:none}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line-soft);border:1px solid var(--line-soft);border-radius:8px;overflow:hidden}
+  .card{background:var(--surface);padding:16px 16px 14px}
+  .card .k{font-size:11.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .card .v{font-family:var(--mono);font-size:26px;font-weight:700;margin-top:4px;letter-spacing:-.01em}
+  .card .tag{font-size:11.5px;font-weight:600;margin-top:3px}
+  .t-ok{color:var(--ok)} .t-warn{color:var(--amber)} .t-bad{color:var(--rust)} .t-mut{color:var(--ink-faint)}
+  /* table */
+  .tbl-scroll{overflow-x:auto;border:1px solid var(--line-soft);border-radius:8px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line-soft)}
+  th{background:var(--surface-2);font-weight:600;color:var(--ink-soft);position:sticky;top:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+  th:first-child,td:first-child{text-align:left}
+  td{font-family:var(--mono)}
+  td.lbl{font-family:"Inter",sans-serif;font-weight:500}
+  tbody tr:hover{background:var(--surface-2)}
+  .flag{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:2px}
+  .f-bad{background:var(--rust-wash);color:var(--rust)}
+  .f-warn{background:#fbf0d8;color:var(--amber)}
+  .f-ok{background:var(--ok-wash);color:var(--ok)}
+  caption{caption-side:bottom;text-align:left;color:var(--ink-faint);font-size:12px;padding:10px 2px;font-family:"Inter",sans-serif}
+  /* wright map */
+  .wright{display:grid;grid-template-columns:1fr;gap:0}
+  #wrightSvg{width:100%;height:auto;display:block;font-family:var(--mono)}
+  .wlegend{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:var(--ink-soft)}
+  .wlegend span{display:inline-flex;align-items:center;gap:7px}
+  .dotkey{width:11px;height:11px;border-radius:50%}
+  /* interpretation */
+  .interp p{margin:0 0 13px}
+  .interp h3{font-family:"Space Grotesk",sans-serif;font-size:15px;margin:22px 0 8px;color:var(--ink);display:flex;align-items:center;gap:9px}
+  .interp h3::before{content:"";width:14px;height:2px;background:var(--teal)}
+  .interp ul{margin:0 0 14px;padding-left:20px}
+  .interp li{margin-bottom:6px}
+  .interp .verdict{border-left:3px solid var(--teal);background:var(--surface-2);padding:12px 16px;border-radius:0 6px 6px 0;margin:0 0 16px}
+  .interp code{font-family:var(--mono);background:var(--surface-2);padding:1px 5px;border-radius:3px;font-size:12.5px}
+  .muted{color:var(--ink-faint);font-size:12.5px}
+  details.note{margin-top:14px;font-size:13px;color:var(--ink-soft)}
+  details.note summary{cursor:pointer;font-weight:600;color:var(--teal-deep)}
+  details.note p{margin:8px 0 0}
+  footer{margin-top:34px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:12.5px}
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (max-width:560px){.panel-b{padding:15px}.card .v{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="badge">Rating Scale Model · JMLE</span>
+    <h1>RASA PGSD UPI KAMPUS SERANG<span class="scale">.</span> Rasch Analysis for Scale Assessment Versi Lokal<br>untuk angket <span class="scale">Likert</span></h1>
+    <p class="lede">Ubah respons skala Likert menjadi ukuran (<b>logit</b>) yang setara interval. Estimasi tingkat kesukaran butir, kemampuan/posisi responden, kualitas kategori, statistik kecocokan, reliabilitas, dan <b>peta Wright</b> — lengkap dengan interpretasinya dalam bahasa Indonesia.</p>
+  </header>
+
+  <!-- INPUT -->
+  <section class="panel">
+    <div class="panel-h"><span class="n">01</span><h2>Masukkan data</h2><span class="sub">baris = responden · kolom = butir</span></div>
+    <div class="panel-b">
+      <textarea id="data" spellcheck="false" placeholder="Tempel data dari Excel/CSV di sini.&#10;Pemisah boleh koma, titik koma, tab, atau spasi.&#10;Baris pertama boleh berisi nama butir (header).&#10;&#10;Contoh (skala 1–5):&#10;ID,B1,B2,B3,B4,B5&#10;R01,4,5,3,4,5&#10;R02,2,3,2,1,2"></textarea>
+      <div class="opts">
+        <div class="field check"><input type="checkbox" id="hasHeader" checked><label for="hasHeader">Baris pertama = nama butir (header)</label></div>
+        <div class="field check"><input type="checkbox" id="hasId" checked><label for="hasId">Kolom pertama = ID responden</label></div>
+        <div class="field"><label for="revItems">Butir terbalik (reverse) — no. urut, pisah koma</label><input type="text" id="revItems" placeholder="mis. 3,7"></div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="runBtn">Jalankan analisis Rasch</button>
+        <label class="btn-ghost" style="display:inline-block">Unggah CSV<input type="file" id="file" accept=".csv,.txt,.tsv" hidden></label>
+        <button class="btn-ghost" id="exampleBtn">Muat data contoh</button>
+        <span class="file-lbl" id="fileName"></span>
+      </div>
+      <div class="err" id="err"></div>
+    </div>
+  </section>
+
+  <div id="results">
+    <!-- SUMMARY -->
+    <section class="panel">
+      <div class="panel-h"><span class="n">02</span><h2>Ringkasan kalibrasi</h2><span class="sub" id="dimNote"></span></div>
+      <div class="panel-b"><div class="cards" id="cards"></div>
+        <p class="muted" style="margin:14px 0 0">Reliabilitas & separasi mengikuti rambu yang lazim dipakai (mis. Bond &amp; Fox; Sumintono &amp; Widhiarso): separasi &gt; 2 dan reliabilitas &gt; 0,80 menandakan instrumen membedakan dengan baik.</p>
+      </div>
+    </section>
+
+    <!-- WRIGHT MAP -->
+    <section class="panel">
+      <div class="panel-h"><span class="n">03</span><h2>Peta Wright</h2><span class="sub">responden &amp; butir pada satu garis logit</span></div>
+      <div class="panel-b">
+        <div class="wright"><svg id="wrightSvg"></svg></div>
+        <div class="wlegend">
+          <span><span class="dotkey" style="background:var(--teal)"></span> Sebaran responden (kiri)</span>
+          <span><span class="dotkey" style="background:var(--rust)"></span> Letak butir (kanan) — makin atas makin sulit disetujui</span>
+        </div>
+        <p class="muted" style="margin-top:12px" id="targetNote"></p>
+      </div>
+    </section>
+
+    <!-- ITEM TABLE -->
+    <section class="panel">
+      <div class="panel-h"><span class="n">04</span><h2>Statistik butir</h2><span class="sub">urut dari tersulit ke termudah disetujui</span></div>
+      <div class="panel-b">
+        <div class="tbl-scroll"><table id="itemTbl"></table></div>
+        <button class="btn-ghost" id="expItems" style="margin-top:14px">Unduh tabel butir (CSV)</button>
+      </div>
+    </section>
+
+    <!-- CATEGORY -->
+    <section class="panel">
+      <div class="panel-h"><span class="n">05</span><h2>Fungsi kategori (rating scale)</h2><span class="sub">apakah pilihan jawaban berfungsi terurut</span></div>
+      <div class="panel-b"><div class="tbl-scroll"><table id="catTbl"></table></div>
+        <p class="muted" id="catNote" style="margin-top:12px"></p>
+      </div>
+    </section>
+
+    <!-- PERSON -->
+    <section class="panel">
+      <div class="panel-h"><span class="n">06</span><h2>Ukuran responden</h2><span class="sub" id="personSub"></span></div>
+      <div class="panel-b">
+        <div class="tbl-scroll" style="max-height:340px;overflow-y:auto"><table id="personTbl"></table></div>
+        <button class="btn-ghost" id="expPersons" style="margin-top:14px">Unduh semua ukuran responden (CSV)</button>
+      </div>
+    </section>
+
+    <!-- WINSTEPS-STYLE OUTPUT -->
+    <section class="panel">
+      <div class="panel-h"><span class="n">07</span><h2>Output gaya Winsteps / Ministep</h2><span class="sub">tabel teks lebar-tetap</span></div>
+      <div class="panel-b">
+        <div class="actions" style="margin-top:0;margin-bottom:14px">
+          <button class="btn-primary" id="dlWs">Unduh sebagai .txt</button>
+          <button class="btn-ghost" id="cpWs">Salin semua</button>
+          <span class="file-lbl" id="cpMsg"></span>
+        </div>
+        <div style="overflow-x:auto;border:1px solid var(--line-soft);border-radius:8px;background:#0E1620">
+          <pre id="wsOut" style="margin:0;padding:16px;font-family:var(--mono);font-size:12px;line-height:1.45;color:#D7E2E8;white-space:pre"></pre>
+        </div>
+        <p class="muted" style="margin-top:12px">Format meniru tabel Winsteps/Ministep: Tabel 3.1 (ringkasan), 13/14 (statistik butir, urut ukuran &amp; entri), 17/18 (statistik responden), dan 3.2 (struktur kategori). Angka berasal dari estimasi JMLE alat ini, sehingga bisa berbeda tipis dengan Winsteps asli.</p>
+      </div>
+    </section>
+
+    <!-- INTERPRETATION -->
+    <section class="panel">
+      <div class="panel-h"><span class="n">08</span><h2>Interpretasi</h2><span class="sub">pembacaan hasil</span></div>
+      <div class="panel-b interp" id="interp"></div>
+    </section>
+
+    <footer>
+      <strong>Catatan metodologis.</strong> Estimasi memakai Rating Scale Model (Andrich) dengan metode JMLE — algoritma yang juga dipakai Winsteps. Validasi internal menunjukkan pemulihan parameter yang akurat, namun JMLE memiliki sedikit bias pelebaran sebaran yang melekat pada metodenya. Untuk keperluan publikasi, sebaiknya hasil tetap diverifikasi silang dengan perangkat baku seperti Winsteps atau paket R (eRm/TAM/mirt). Identifikasi skala: rata-rata kesukaran butir ditetapkan = 0; jumlah ambang = 0. Skor ekstrem (semua minimum/maksimum) ditandai dan tidak diestimasi presisi.
+    </footer>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   RATING SCALE MODEL (Andrich) — JMLE
+   Ported & validated against a NumPy reference implementation.
+============================================================ */
+
+function categoryProbs(theta, delta, tau){
+  // categories 0..m where m = tau.length ; returns array length m+1
+  const m = tau.length;
+  let cum = 0; const eta = new Array(m+1); let mx = -1e18;
+  eta[0] = 0;
+  for(let l=1;l<=m;l++){ cum += tau[l-1]; eta[l] = l*(theta-delta) - cum; }
+  for(let l=0;l<=m;l++){ if(eta[l]>mx) mx=eta[l]; }
+  let s=0; const P=new Array(m+1);
+  for(let l=0;l<=m;l++){ P[l]=Math.exp(eta[l]-mx); s+=P[l]; }
+  for(let l=0;l<=m;l++){ P[l]/=s; }
+  return P;
+}
+function meanVar(P){
+  const m=P.length-1; let E=0,E2=0;
+  for(let l=0;l<=m;l++){ E+=l*P[l]; E2+=l*l*P[l]; }
+  return [E, E2-E*E];
+}
+
+function estimateRSM(X, mask, m, maxIter=400, tol=1e-5){
+  const N=X.length, I=X[0].length;
+  const theta=new Array(N).fill(0), delta=new Array(I).fill(0), tau=new Array(m).fill(0);
+  // person/item raw scores & observed counts (over non-missing)
+  const Rn=new Array(N).fill(0), Si=new Array(I).fill(0);
+  const nObsP=new Array(N).fill(0), nObsI=new Array(I).fill(0);
+  for(let n=0;n<N;n++)for(let i=0;i<I;i++) if(mask[n][i]){Rn[n]+=X[n][i];Si[i]+=X[n][i];nObsP[n]++;nObsI[i]++;}
+  let iter=0;
+  for(iter=0;iter<maxIter;iter++){
+    let maxStep=0;
+    // ---- person update ----
+    for(let n=0;n<N;n++){
+      let Eh=0,Vh=0;
+      for(let i=0;i<I;i++) if(mask[n][i]){const [E,V]=meanVar(categoryProbs(theta[n],delta[i],tau));Eh+=E;Vh+=V;}
+      let d=(Rn[n]-Eh)/Math.max(Vh,1e-9); if(d>1)d=1; if(d<-1)d=-1;
+      theta[n]+=d; if(theta[n]>6)theta[n]=6; if(theta[n]<-6)theta[n]=-6;
+      if(Math.abs(d)>maxStep)maxStep=Math.abs(d);
+    }
+    // ---- item update ----
+    for(let i=0;i<I;i++){
+      let Eh=0,Vh=0;
+      for(let n=0;n<N;n++) if(mask[n][i]){const [E,V]=meanVar(categoryProbs(theta[n],delta[i],tau));Eh+=E;Vh+=V;}
+      let d=(Eh-Si[i])/Math.max(Vh,1e-9); if(d>1)d=1; if(d<-1)d=-1;
+      delta[i]+=d; if(delta[i]>6)delta[i]=6; if(delta[i]<-6)delta[i]=-6;
+      if(Math.abs(d)>maxStep)maxStep=Math.abs(d);
+    }
+    // center item difficulties
+    let dm=delta.reduce((a,b)=>a+b,0)/I; for(let i=0;i<I;i++)delta[i]-=dm;
+    // ---- threshold update (Newton, sum-zero) ----
+    const G=new Array(m).fill(0); const H=[]; for(let a=0;a<m;a++)H.push(new Array(m).fill(0));
+    for(let n=0;n<N;n++)for(let i=0;i<I;i++){ if(!mask[n][i])continue;
+      const P=categoryProbs(theta[n],delta[i],tau);
+      const Pge=new Array(m); // P(X>=k) k=1..m
+      let acc=0; for(let k=m;k>=1;k--){acc+=P[k];Pge[k-1]=acc;}
+      const x=X[n][i];
+      for(let k=1;k<=m;k++){ G[k-1]+= Pge[k-1] - (x>=k?1:0); }
+      for(let a=0;a<m;a++)for(let b=0;b<m;b++){ const mxk=Math.max(a,b); H[a][b]+= Pge[a]*Pge[b]-Pge[mxk]; }
+    }
+    const step=solve(H,G,m); // H * s = G
+    for(let k=0;k<m;k++){ let s=step[k]; if(s>1)s=1; if(s<-1)s=-1; tau[k]-=s; if(Math.abs(s)>maxStep)maxStep=Math.abs(s);}
+    let tm=tau.reduce((a,b)=>a+b,0)/m; for(let k=0;k<m;k++)tau[k]-=tm;
+    if(maxStep<tol)break;
+  }
+  return {theta,delta,tau,iter,nObsP,nObsI,Rn,Si};
+}
+
+function solve(A,b,n){ // Gaussian elimination with tiny ridge
+  const M=[]; for(let i=0;i<n;i++){M.push(A[i].slice()); M[i][i]-=1e-6; M[i].push(b[i]);}
+  for(let c=0;c<n;c++){
+    let piv=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[piv][c]))piv=r;
+    [M[c],M[piv]]=[M[piv],M[c]];
+    const d=M[c][c]||1e-9;
+    for(let r=0;r<n;r++){ if(r===c)continue; const f=M[r][c]/d; for(let k=c;k<=n;k++)M[r][k]-=f*M[c][k]; }
+  }
+  const x=new Array(n); for(let i=0;i<n;i++)x[i]=M[i][n]/(M[i][i]||1e-9); return x;
+}
+
+/* ---------- fit, reliability, point-measure ---------- */
+function analyse(X,mask,res,m){
+  const N=X.length,I=X[0].length,cats=[]; for(let l=0;l<=m;l++)cats.push(l);
+  const {theta,delta,tau}=res;
+  // per-item & per-person fit accumulators
+  const outNum_i=new Array(I).fill(0), outDen_i=new Array(I).fill(0),
+        infNum_i=new Array(I).fill(0), infDen_i=new Array(I).fill(0),
+        q2out_i=new Array(I).fill(0), q2inf_i=new Array(I).fill(0);
+  const outNum_p=new Array(N).fill(0), infNum_p=new Array(N).fill(0), infDen_p=new Array(N).fill(0), cnt_p=new Array(N).fill(0);
+  const q2out_p=new Array(N).fill(0), q2inf_p=new Array(N).fill(0);
+  const SEp=new Array(N).fill(0), SEi=new Array(I).fill(0), infoP=new Array(N).fill(0), infoI=new Array(I).fill(0);
+  // point-measure: corr(x_i, theta) over persons
+  const catCount=new Array(m+1).fill(0), catMeasSum=new Array(m+1).fill(0);
+  const catZ2=new Array(m+1).fill(0), catRes2=new Array(m+1).fill(0), catV=new Array(m+1).fill(0), catExpSum=new Array(m+1).fill(0), catExpW=new Array(m+1).fill(0);
+  // collect for PT correlation
+  const itemX=[]; for(let i=0;i<I;i++)itemX.push([]); const itemTh=[]; for(let i=0;i<I;i++)itemTh.push([]);
+  for(let n=0;n<N;n++)for(let i=0;i<I;i++){ if(!mask[n][i])continue;
+    const P=categoryProbs(theta[n],delta[i],tau); const [E,V]=meanVar(P);
+    let C4=0; for(let l=0;l<=m;l++){const dd=l-E; C4+=P[l]*dd*dd*dd*dd;}
+    const x=X[n][i]; const res2=(x-E)*(x-E); const z2= res2/Math.max(V,1e-9);
+    outNum_i[i]+=z2; outDen_i[i]++; infNum_i[i]+=res2; infDen_i[i]+=V;
+    q2out_i[i]+=C4/Math.max(V*V,1e-12); q2inf_i[i]+=(C4-V*V);
+    outNum_p[n]+=z2; cnt_p[n]++; infNum_p[n]+=res2; infDen_p[n]+=V;
+    q2out_p[n]+=C4/Math.max(V*V,1e-12); q2inf_p[n]+=(C4-V*V);
+    infoP[n]+=V; infoI[i]+=V;
+    catCount[x]++; catMeasSum[x]+=theta[n];
+    catZ2[x]+=z2; catRes2[x]+=res2; catV[x]+=V;
+    for(let l=0;l<=m;l++){catExpSum[l]+=theta[n]*P[l]; catExpW[l]+=P[l];}
+    itemX[i].push(x); itemTh[i].push(theta[n]);
+  }
+  const item=[], person=[];
+  for(let i=0;i<I;i++){
+    const No=outDen_i[i];
+    const outfit=outNum_i[i]/Math.max(No,1);
+    const infit=infNum_i[i]/Math.max(infDen_i[i],1e-9);
+    const qo=Math.sqrt(Math.max(q2out_i[i]/(No*No)-1/No,1e-9));
+    const qi=Math.sqrt(Math.max(q2inf_i[i]/(infDen_i[i]*infDen_i[i]),1e-9));
+    const zout=(Math.cbrt(outfit)-1)*(3/qo)+(qo/3);
+    const zin=(Math.cbrt(infit)-1)*(3/qi)+(qi/3);
+    SEi[i]=1/Math.sqrt(Math.max(infoI[i],1e-9));
+    item.push({i, name:res.itemNames[i], measure:delta[i], se:SEi[i], infit, zin, outfit, zout,
+      total:res.Si[i], count:res.nObsI[i],
+      pm:pearson(itemX[i],itemTh[i]), extreme:res.Si[i]===0||res.Si[i]===m*res.nObsI[i]});
+  }
+  for(let n=0;n<N;n++){
+    const No=cnt_p[n]; if(No===0){continue;}
+    const outfit=outNum_p[n]/No, infit=infNum_p[n]/Math.max(infDen_p[n],1e-9);
+    const qo=Math.sqrt(Math.max(q2out_p[n]/(No*No)-1/No,1e-9));
+    const qi=Math.sqrt(Math.max(q2inf_p[n]/(infDen_p[n]*infDen_p[n]),1e-9));
+    const zout=(Math.cbrt(outfit)-1)*(3/qo)+(qo/3);
+    const zin=(Math.cbrt(infit)-1)*(3/qi)+(qi/3);
+    SEp[n]=1/Math.sqrt(Math.max(infoP[n],1e-9));
+    person.push({n, id:res.personIds[n], measure:theta[n], se:SEp[n], raw:res.Rn[n], count:No, maxraw:m*res.nObsP[n], infit, zin, outfit, zout,
+      extreme:res.Rn[n]===0||res.Rn[n]===m*res.nObsP[n]});
+  }
+  // reliability & separation (exclude extremes)
+  const relP=relSep(person.filter(p=>!p.extreme));
+  const relI=relSep(item.filter(it=>!it.extreme));
+  // category structure
+  const totN=cats.reduce((a,c)=>a+catCount[c],0);
+  // Thurstone thresholds: theta (item-centered) where P(X>=k)=0.5
+  function thurstone(k){
+    let lo=-10,hi=10;
+    const Pge=t=>{const P=categoryProbs(t,0,tau);let s=0;for(let l=k;l<=m;l++)s+=P[l];return s;};
+    for(let it=0;it<60;it++){const mid=(lo+hi)/2; if(Pge(mid)<0.5)lo=mid; else hi=mid;}
+    return (lo+hi)/2;
+  }
+  const category=[]; for(let l=0;l<=m;l++){
+    category.push({cat:l, count:catCount[l], pct:catCount[l]/totN*100,
+      avg: catCount[l]?catMeasSum[l]/catCount[l]:null,
+      expect: catExpW[l]>0?catExpSum[l]/catExpW[l]:null,
+      infit: catRes2[l]>0||catV[l]>0?catRes2[l]/Math.max(catV[l],1e-9):null,
+      outfit: catCount[l]?catZ2[l]/catCount[l]:null,
+      threshold: l>=1?tau[l-1]:null,
+      catMeasure: l>=1?thurstone(l):null});
+  }
+  // ordered thresholds?
+  let ordered=true; for(let k=1;k<tau.length;k++) if(tau[k]<=tau[k-1])ordered=false;
+  // cronbach alpha (raw total)
+  const alpha=cronbach(X,mask,I,N);
+  // targeting
+  const mPers=mean(person.map(p=>p.measure));
+  return {item,person,relP,relI,category,ordered,alpha,mPers,tau};
+}
+function relSep(arr){
+  if(arr.length<2)return {sep:0,rel:0,sd:0,rmse:0};
+  const meas=arr.map(a=>a.measure); const sd2=variance(meas);
+  const mse=mean(arr.map(a=>a.se*a.se)); const tv=Math.max(sd2-mse,1e-9);
+  const sep=Math.sqrt(tv/mse); const rel=tv/sd2;
+  return {sep, rel:Math.max(0,Math.min(1,rel)), sd:Math.sqrt(sd2), rmse:Math.sqrt(mse)};
+}
+function cronbach(X,mask,I,N){
+  let sumItemVar=0; const totals=[];
+  for(let i=0;i<I;i++){const col=[];for(let n=0;n<N;n++)if(mask[n][i])col.push(X[n][i]);sumItemVar+=variance(col);}
+  for(let n=0;n<N;n++){let t=0,ok=true;for(let i=0;i<I;i++){if(mask[n][i])t+=X[n][i];else ok=false;}if(ok)totals.push(t);}
+  const tv=variance(totals); if(tv<=0)return 0;
+  return (I/(I-1))*(1-sumItemVar/tv);
+}
+function pearson(a,b){const n=a.length;if(n<3)return null;let ma=mean(a),mb=mean(b),sa=0,sb=0,sab=0;
+  for(let i=0;i<n;i++){const da=a[i]-ma,db=b[i]-mb;sa+=da*da;sb+=db*db;sab+=da*db;}
+  if(sa<=0||sb<=0)return null;return sab/Math.sqrt(sa*sb);}
+function mean(a){return a.reduce((x,y)=>x+y,0)/a.length;}
+function variance(a){if(a.length<2)return 0;const m=mean(a);return a.reduce((s,x)=>s+(x-m)*(x-m),0)/(a.length-1);}
+
+/* ============================================================
+   PARSING
+============================================================ */
+function parse(text, hasHeader, hasId){
+  const lines=text.trim().split(/\r?\n/).filter(l=>l.trim()!=="");
+  if(lines.length<2) throw new Error("Data terlalu sedikit. Butuh minimal 2 baris responden.");
+  const split=l=>l.trim().split(/[,;\t]|\s{2,}|\s/).map(s=>s.trim()).filter(s=>s!=="");
+  let rows=lines.map(split);
+  let itemNames=null;
+  if(hasHeader){ itemNames=rows.shift(); if(hasId)itemNames=itemNames.slice(1); }
+  const ids=[], matrix=[];
+  rows.forEach((r,ri)=>{
+    let id=null; let cells=r;
+    if(hasId){ id=r[0]; cells=r.slice(1); }
+    ids.push(id!=null?id:("R"+String(ri+1).padStart(2,"0")));
+    matrix.push(cells.map(c=>{const v=Number(c);return Number.isFinite(v)?v:null;}));
+  });
+  const I=Math.max(...matrix.map(r=>r.length));
+  matrix.forEach(r=>{while(r.length<I)r.push(null);});
+  if(!itemNames||itemNames.length<I){itemNames=[];for(let i=0;i<I;i++)itemNames.push("B"+(i+1));}
+  itemNames=itemNames.slice(0,I);
+  return {ids, matrix, itemNames};
+}
+
+/* ============================================================
+   ORCHESTRATION
+============================================================ */
+const $=id=>document.getElementById(id);
+let LAST=null;
+
+function run(){
+  $("err").textContent="";
+  try{
+    const raw=$("data").value;
+    if(!raw.trim()){$("err").textContent="Belum ada data. Tempel data atau klik “Muat data contoh”.";return;}
+    const {ids,matrix,itemNames}=parse(raw,$("hasHeader").checked,$("hasId").checked);
+    const N=matrix.length, I=itemNames.length;
+    if(I<2)throw new Error("Butuh minimal 2 butir (kolom).");
+    // determine scale range from observed values
+    let lo=Infinity,hi=-Infinity;
+    for(let n=0;n<N;n++)for(let i=0;i<I;i++){const v=matrix[n][i];if(v==null)continue;if(v<lo)lo=v;if(v>hi)hi=v;}
+    if(!Number.isFinite(lo))throw new Error("Tidak ada angka valid pada data.");
+    const m=Math.round(hi-lo);
+    if(m<1)throw new Error("Skala tidak terdeteksi (semua nilai sama?).");
+    if(m>9)throw new Error("Terdeteksi >10 kategori. Pastikan kolom ID dicentang dengan benar / data berupa skala Likert.");
+    // reverse items
+    const rev=($("revItems").value.match(/\d+/g)||[]).map(x=>parseInt(x)-1).filter(x=>x>=0&&x<I);
+    // build X (0-based categories) + mask, apply reverse
+    const X=[],mask=[]; let nMiss=0;
+    for(let n=0;n<N;n++){const xr=[],mr=[];for(let i=0;i<I;i++){let v=matrix[n][i];
+      if(v==null){xr.push(0);mr.push(false);nMiss++;}
+      else{v=Math.round(v-lo); if(rev.includes(i))v=m-v; xr.push(v);mr.push(true);}
+    }X.push(xr);mask.push(mr);}
+    const btn=$("runBtn"); btn.innerHTML='<span class="spin"></span>Menghitung…'; btn.disabled=true;
+    setTimeout(()=>{
+      try{
+        const res=estimateRSM(X,mask,m);
+        res.itemNames=itemNames; res.personIds=ids;
+        const A=analyse(X,mask,res,m);
+        LAST={A,res,m,lo,hi,N,I,nMiss,rev:rev.map(x=>x+1),X,mask};
+        render(LAST);
+      }catch(e){$("err").textContent="Gagal menghitung: "+e.message;}
+      btn.innerHTML="Jalankan analisis Rasch"; btn.disabled=false;
+    },30);
+  }catch(e){$("err").textContent=e.message;}
+}
+
+/* ---------- rendering ---------- */
+function fmt(x,d=2){return x==null||!Number.isFinite(x)?"–":x.toFixed(d);}
+function tag(v,good,warn){ // returns class
+  if(v>=good)return "t-ok"; if(v>=warn)return "t-warn"; return "t-bad";}
+
+function render(D){
+  const {A,m,lo,hi,N,I,nMiss}=D;
+  $("results").style.display="block";
+  $("dimNote").textContent=`${N} responden · ${I} butir · skala ${lo}–${hi} (${m+1} kategori)`;
+
+  // cards
+  const relPv=A.relP.rel, relIv=A.relI.rel;
+  const cards=[
+    {k:"Reliabilitas responden",v:fmt(relPv,2),tag:relPv>=.8?["Baik","t-ok"]:relPv>=.67?["Cukup","t-warn"]:["Lemah","t-bad"]},
+    {k:"Separasi responden",v:fmt(A.relP.sep,2),tag:A.relP.sep>=2?["≥ 2 baik","t-ok"]:["< 2","t-warn"]},
+    {k:"Reliabilitas butir",v:fmt(relIv,2),tag:relIv>=.8?["Baik","t-ok"]:["Perlu data","t-warn"]},
+    {k:"Separasi butir",v:fmt(A.relI.sep,2),tag:A.relI.sep>=2?["≥ 2 baik","t-ok"]:["< 2","t-warn"]},
+    {k:"Cronbach α",v:fmt(A.alpha,2),tag:A.alpha>=.8?["Baik","t-ok"]:A.alpha>=.7?["Cukup","t-warn"]:["Lemah","t-bad"]},
+    {k:"Kategori terurut?",v:A.ordered?"Ya":"Tidak",tag:A.ordered?["Berfungsi","t-ok"]:["Tinjau","t-bad"]},
+  ];
+  $("cards").innerHTML=cards.map(c=>`<div class="card"><div class="k">${c.k}</div><div class="v">${c.v}</div><div class="tag ${c.tag[1]}">${c.tag[0]}</div></div>`).join("");
+
+  drawWright(D);
+
+  // item table
+  const items=A.item.slice().sort((a,b)=>b.measure-a.measure);
+  let h=`<thead><tr><th>Butir</th><th>Ukuran (logit)</th><th>SE</th><th>Infit MNSQ</th><th>ZSTD</th><th>Outfit MNSQ</th><th>ZSTD</th><th>Pt-Measure</th><th>Status</th></tr></thead><tbody>`;
+  items.forEach(it=>{
+    h+=`<tr><td class="lbl">${esc(it.name)}${it.extreme?' <span class="flag f-warn">EKSTREM</span>':''}</td>
+      <td>${fmt(it.measure)}</td><td>${fmt(it.se)}</td>
+      <td>${fmt(it.infit)}</td><td>${fmt(it.zin,1)}</td>
+      <td>${fmt(it.outfit)}</td><td>${fmt(it.zout,1)}</td>
+      <td>${it.pm==null?"–":fmt(it.pm)}</td><td>${itemStatus(it)}</td></tr>`;
+  });
+  h+=`</tbody><caption>Ukuran = tingkat kesukaran disetujui (logit, makin tinggi makin sulit disetujui). MNSQ ideal 0,5–1,5; di luar itu butir kurang cocok dengan model.</caption>`;
+  $("itemTbl").innerHTML=h;
+
+  // category table
+  let c=`<thead><tr><th>Kategori</th><th>Jumlah</th><th>%</th><th>Rerata ukuran</th><th>Ambang Andrich</th></tr></thead><tbody>`;
+  A.category.forEach(ct=>{ c+=`<tr><td class="lbl">${ct.cat+lo}</td><td>${ct.count}</td><td>${fmt(ct.pct,1)}</td>
+     <td>${ct.avg==null?"–":fmt(ct.avg)}</td><td>${ct.threshold==null?"—":fmt(ct.threshold)}</td></tr>`;});
+  c+=`</tbody><caption>“Rerata ukuran” idealnya naik seiring kategori. “Ambang Andrich” idealnya berurutan naik — jika tidak (disordered), pertimbangkan menggabung kategori.</caption>`;
+  $("catTbl").innerHTML=c;
+  $("catNote").innerHTML = A.ordered
+    ? `Ambang antar kategori <b>terurut naik</b> — pilihan jawaban Likert berfungsi sebagaimana mestinya.`
+    : `<b style="color:var(--rust)">Ambang tidak terurut (disordered).</b> Beberapa kategori jarang dipilih atau membingungkan responden — pertimbangkan menggabungkan kategori berdekatan, lalu analisis ulang.`;
+
+  // person table (show all, scrollable)
+  const persons=A.person.slice().sort((a,b)=>b.measure-a.measure);
+  $("personSub").textContent=`${persons.length} responden diestimasi`;
+  let p=`<thead><tr><th>ID</th><th>Skor mentah</th><th>Maks</th><th>Ukuran (logit)</th><th>SE</th><th>Infit</th><th>Outfit</th></tr></thead><tbody>`;
+  persons.forEach(pr=>{ p+=`<tr><td class="lbl">${esc(String(pr.id))}${pr.extreme?' <span class="flag f-warn">EKSTREM</span>':''}</td>
+     <td>${pr.raw}</td><td>${pr.maxraw}</td><td>${fmt(pr.measure)}</td><td>${fmt(pr.se)}</td>
+     <td>${fmt(pr.infit)}</td><td>${fmt(pr.outfit)}</td></tr>`;});
+  p+=`</tbody>`; $("personTbl").innerHTML=p;
+
+  buildInterp(D);
+  $("wsOut").textContent=buildWinsteps(D);
+  $("results").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+function itemStatus(it){
+  if(it.pm!=null && it.pm<0) return '<span class="flag f-bad">PT &lt; 0</span>';
+  const bad=it.outfit>1.5||it.infit>1.5||it.outfit<0.5||it.infit<0.5;
+  const warn=it.outfit>1.3||it.infit>1.3||it.outfit<0.7||it.infit<0.7;
+  if(bad)return '<span class="flag f-bad">MISFIT</span>';
+  if(warn)return '<span class="flag f-warn">CERMATI</span>';
+  return '<span class="flag f-ok">COCOK</span>';
+}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+
+/* ---------- Wright map (signature) ---------- */
+function drawWright(D){
+  const {A}=D; const svg=$("wrightSvg");
+  const persons=A.person.filter(p=>!p.extreme).map(p=>p.measure);
+  const items=A.item.filter(it=>!it.extreme);
+  const all=persons.concat(items.map(it=>it.measure));
+  let lo=Math.min(...all), hi=Math.max(...all);
+  let pad=Math.max(0.5,(hi-lo)*0.12); lo=Math.floor((lo-pad)); hi=Math.ceil((hi+pad));
+  if(hi-lo<2){lo-=1;hi+=1;}
+  const W=700, padTop=26, padBot=26, H=Math.max(340,Math.min(620, items.length*26+120));
+  const plotH=H-padTop-padBot, cx=W/2;
+  const y=v=>padTop+plotH*(1-(v-lo)/(hi-lo));
+  let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" id="wrightSvg" font-family="Space Mono, monospace">`;
+  // ticks & gridlines
+  for(let t=lo;t<=hi;t++){
+    const yy=y(t);
+    s+=`<line x1="40" y1="${yy}" x2="${W-40}" y2="${yy}" stroke="#E7ECEF"/>`;
+    s+=`<text x="${cx}" y="${yy+3}" fill="#8997A3" font-size="10" text-anchor="middle">${t}</text>`;
+  }
+  // center axis
+  s+=`<line x1="${cx}" y1="${padTop-10}" x2="${cx}" y2="${H-padBot+8}" stroke="#16202B" stroke-width="1.5"/>`;
+  s+=`<text x="${cx}" y="14" fill="#16202B" font-size="11" text-anchor="middle" font-weight="700">logit</text>`;
+  s+=`<text x="46" y="${padTop+2}" fill="#0B6E78" font-size="10" font-weight="700">RESPONDEN</text>`;
+  s+=`<text x="${W-46}" y="${padTop+2}" fill="#C24A2E" font-size="10" font-weight="700" text-anchor="end">BUTIR</text>`;
+  s+=`<text x="46" y="${H-padBot+18}" fill="#8997A3" font-size="9">↑ kemampuan tinggi · ↓ rendah</text>`;
+  // persons: bin into rows, dots to LEFT of axis
+  const bin=Math.max(0.2,(hi-lo)/Math.max(14,Math.round(plotH/16)));
+  const map={};
+  persons.forEach(v=>{const b=Math.round(v/bin);map[b]=(map[b]||0)+1;});
+  Object.keys(map).forEach(b=>{
+    const v=b*bin, yy=y(v), cnt=map[b];
+    const dotmax=Math.floor((cx-58)/9);
+    const showN=Math.min(cnt,dotmax);
+    for(let k=0;k<showN;k++){ s+=`<circle cx="${cx-12-k*9}" cy="${yy}" r="3.1" fill="#0B6E78" opacity="0.85"/>`; }
+    if(cnt>dotmax) s+=`<text x="${cx-12-showN*9-4}" y="${yy+3}" fill="#0B6E78" font-size="9" text-anchor="end">+${cnt-dotmax}</text>`;
+  });
+  // items: markers + labels to RIGHT, de-collide vertically
+  const sorted=items.slice().sort((a,b)=>b.measure-a.measure);
+  let lastY=-1e9; const minGap=15;
+  sorted.forEach(it=>{
+    let yy=y(it.measure); const yMark=yy;
+    if(yy-lastY<minGap)yy=lastY+minGap; lastY=yy;
+    s+=`<circle cx="${cx+12}" cy="${yMark}" r="3.4" fill="#C24A2E"/>`;
+    s+=`<line x1="${cx+15}" y1="${yMark}" x2="${cx+30}" y2="${yy}" stroke="#C24A2E" stroke-width="1" opacity=".5"/>`;
+    const mis=it.outfit>1.5||it.infit>1.5;
+    s+=`<text x="${cx+34}" y="${yy+3}" fill="${mis?'#C24A2E':'#16202B'}" font-size="11" font-weight="${mis?700:400}">${esc(it.name)}${mis?' ⚠':''}</text>`;
+  });
+  // mean markers
+  const mP=mean(persons), mI=mean(items.map(it=>it.measure));
+  s+=`<line x1="${cx-46}" y1="${y(mP)}" x2="${cx-6}" y2="${y(mP)}" stroke="#0B6E78" stroke-width="2"/>`;
+  s+=`<text x="${cx-50}" y="${y(mP)+3}" fill="#0B6E78" font-size="9" text-anchor="end">M</text>`;
+  s+=`<line x1="${cx+6}" y1="${y(mI)}" x2="${cx+46}" y2="${y(mI)}" stroke="#C24A2E" stroke-width="2"/>`;
+  s+="</svg>";
+  svg.outerHTML=s;
+  // targeting note
+  const gap=mP-mI;
+  $("targetNote").innerHTML=`Rata-rata kemampuan responden ${gap>=0?'<b>di atas</b>':'<b>di bawah</b>'} rata-rata kesukaran butir sebesar <b>${fmt(Math.abs(gap))} logit</b>. ` +
+    (Math.abs(gap)<0.5?'Penargetan instrumen <b>baik</b> — tingkat kesulitan butir sesuai dengan responden.'
+      : gap>0?'Sebagian besar butir terasa <b>mudah disetujui</b> oleh responden; tambahkan butir yang lebih sulit untuk membedakan responden level atas.'
+            :'Sebagian besar butir terasa <b>sulit disetujui</b>; tambahkan butir yang lebih mudah agar responden level bawah terukur baik.');
+}
+
+/* ---------- interpretation narrative ---------- */
+function buildInterp(D){
+  const {A,m,N,I,nMiss,rev}=D; const el=$("interp"); let h="";
+  const F=x=>fmt(x); // 2-dp
+  const relPv=A.relP.rel, sepP=A.relP.sep, relIv=A.relI.rel, sepI=A.relI.sep;
+  const strata=Math.max(1,Math.round((4*sepP+1)/3));
+  const ne=A.item.filter(i=>!i.extreme);
+  const byMeas=ne.slice().sort((a,b)=>b.measure-a.measure);
+  const hardest=byMeas[0], easiest=byMeas[byMeas.length-1];
+  const persNE=A.person.filter(p=>!p.extreme);
+  const gap=A.mPers; // item mean is 0
+  const personSD=A.relP.sd;
+
+  // --- derived findings ---
+  const underfit=ne.filter(it=>it.infit>1.5||it.outfit>1.5);
+  const overfit=ne.filter(it=>it.infit<0.5||it.outfit<0.5);
+  const negpt=ne.filter(it=>it.pm!=null&&it.pm<0.3);
+  const watch=ne.filter(it=>!underfit.includes(it)&&!overfit.includes(it)&&(it.infit>1.3||it.outfit>1.3||it.infit<0.7||it.outfit<0.7));
+  underfit.sort((a,b)=>Math.max(b.infit,b.outfit)-Math.max(a.infit,a.outfit));
+  // coverage gaps & redundancy
+  const asc=ne.slice().sort((a,b)=>a.measure-b.measure);
+  let maxGap=0,gapMid=0; for(let k=1;k<asc.length;k++){const g=asc[k].measure-asc[k-1].measure; if(g>maxGap){maxGap=g;gapMid=(asc[k].measure+asc[k-1].measure)/2;}}
+  const redund=[]; for(let k=1;k<asc.length;k++) if(asc[k].measure-asc[k-1].measure<0.3) redund.push([asc[k-1].name,asc[k].name]);
+  // person fit & targeting
+  const misP=persNE.filter(p=>p.outfit>2||p.infit>2).sort((a,b)=>Math.max(b.infit,b.outfit)-Math.max(a.infit,a.outfit));
+  const exHi=A.person.filter(p=>p.extreme&&p.raw===p.maxraw).length;
+  const exLo=A.person.filter(p=>p.extreme&&p.raw===0).length;
+  const nearCeil=persNE.filter(p=>p.measure>hardest.measure).length;
+  const nearFloor=persNE.filter(p=>p.measure<easiest.measure).length;
+  // category usage & monotonicity
+  const used=A.category.filter(c=>c.count>0);
+  const rare=used.filter(c=>c.pct<5);
+  let monoAvg=true; for(let k=1;k<used.length;k++) if(used[k].avg!=null&&used[k-1].avg!=null&&used[k].avg<=used[k-1].avg) monoAvg=false;
+
+  const actions=[]; // prioritized recommendations collected along the way
+
+  // ===== VERDICT (synthesised) =====
+  let v;
+  if(relPv>=.8&&A.ordered&&underfit.length===0) v=`Instrumen ini <b>siap pakai</b> untuk mengukur konstruk yang dituju: konsistensi baik, pilihan jawaban berfungsi, dan tidak ada butir yang menyimpang dari model.`;
+  else if(relPv>=.8&&underfit.length>0) v=`Secara keseluruhan instrumen <b>cukup kuat</b>, namun ${underfit.length} butir menyimpang dari model dan perlu ditinjau lebih dulu agar pengukuran tidak terganggu.`;
+  else if(relPv>=.67) v=`Instrumen <b>berfungsi pada taraf cukup</b>. Beberapa perbaikan terarah (lihat langkah di bawah) akan menaikkannya ke taraf baik.`;
+  else v=`Secara pengukuran instrumen ini <b>masih lemah</b> — kemampuannya memisahkan responden terbatas. Perbaikan cukup mendasar diperlukan sebelum dipakai luas.`;
+  h+=`<div class="verdict"><b>Kesimpulan.</b> ${v}</div>`;
+
+  // ===== LEAD with the single most salient finding =====
+  let lead;
+  if(!A.ordered) lead=`Hal yang paling perlu perhatian adalah <b>fungsi kategori jawaban</b>: ambangnya tidak terurut, sehingga skala Likert belum dipakai responden sebagaimana diharapkan.`;
+  else if(underfit.length>0) lead=`Temuan paling menonjol: butir <code>${esc(underfit[0].name)}</code> paling tidak cocok dengan model (MNSQ hingga ${F(Math.max(underfit[0].infit,underfit[0].outfit))}), artinya pola jawaban padanya cukup acak/tak terduga.`;
+  else if(relPv<.67) lead=`Hal yang paling menonjol: reliabilitas responden hanya ${F(relPv)} — instrumen sulit membedakan responden yang sebenarnya berbeda.`;
+  else if(Math.abs(gap)>=0.8) lead=`Hal yang paling menonjol: tingkat kesulitan butir <b>kurang selaras</b> dengan responden (selisih ${F(Math.abs(gap))} logit), sehingga sebagian responden kurang terukur dengan presisi.`;
+  else lead=`Tidak ada masalah mencolok; sebaran responden dan butir relatif selaras dan semua butir cocok dengan model.`;
+  h+=`<p>${lead}</p>`;
+
+  // ===== RELIABILITY with cross-reasoning =====
+  h+=`<h3>Kualitas pengukuran</h3><ul>`;
+  h+=`<li><b>Reliabilitas responden ${F(relPv)}</b>, separasi ${F(sepP)} — `+
+     (relPv>=.8?`instrumen memisahkan responden secara andal menjadi sekitar <b>${strata} tingkat</b>.`
+      :`pemisahan responden masih lemah (≈${strata} tingkat saja).`)+`</li>`;
+  h+=`<li><b>Reliabilitas butir ${F(relIv)}</b>, separasi ${F(sepI)} — `+
+     (relIv>=.8?`urutan kesukaran butir stabil.`:`urutan kesukaran butir belum mantap.`)+`</li>`;
+  // synthesise the two
+  if(relPv<.8&&relIv>=.8){ h+=`<li>Pola ini khas: <b>butir terkalibrasi baik tetapi responden kurang terpisah</b> — biasanya karena jumlah butir terlalu sedikit atau butir terlalu seragam kesukarannya. Menambah butir (terutama pada rentang yang kosong) lebih membantu daripada menambah responden.</li>`; actions.push("Tambah butir untuk menaikkan pemisahan responden (reliabilitas person)."); }
+  else if(relPv>=.8&&relIv<.8){ h+=`<li>Sebaliknya, <b>responden terpisah baik tetapi kalibrasi butir belum mantap</b> — ini umum pada sampel kecil dan akan membaik dengan <b>menambah jumlah responden</b>.</li>`; actions.push(`Tambah jumlah responden (saat ini ${N}) untuk memantapkan kalibrasi butir.`); }
+  h+=`<li><b>Cronbach α ${F(A.alpha)}</b> — konsistensi internal `+(A.alpha>=.8?"baik":A.alpha>=.7?"cukup":"rendah")+`. `+(A.alpha-relPv>0.1?`α lebih tinggi dari reliabilitas Rasch karena α cenderung optimistis; pakai reliabilitas Rasch sebagai acuan utama.`:``)+`</li></ul>`;
+
+  // ===== TARGETING & COVERAGE =====
+  h+=`<h3>Penargetan & cakupan konstruk</h3>`;
+  let tp=`Rata-rata posisi responden ${gap>=0?'berada di atas':'di bawah'} rata-rata kesukaran butir sebesar <b>${F(Math.abs(gap))} logit</b>. `;
+  if(Math.abs(gap)<0.5) tp+=`Penargetan tergolong <b>baik</b>.`;
+  else if(gap>0){ tp+=`Mayoritas butir terasa <b>mudah disetujui</b>; responden berkonsentrasi di atas butir.`; actions.push("Tambahkan butir yang lebih “sulit disetujui” untuk membedakan responden bermotivasi tinggi."); }
+  else { tp+=`Mayoritas butir terasa <b>sulit disetujui</b>; responden berkumpul di bawah butir.`; actions.push("Tambahkan butir yang lebih “mudah disetujui” agar responden taraf rendah terukur lebih presisi."); }
+  h+=`<p>${tp}</p>`;
+  let cov=[];
+  if(maxGap>1.0){ cov.push(`Ada <b>celah cakupan</b> sekitar ${F(gapMid)} logit (jarak ${F(maxGap)} logit antar butir terdekat) — wilayah konstruk di sini kurang terukur.`); actions.push(`Tambahkan butir di sekitar ${F(gapMid)} logit untuk menutup celah cakupan.`); }
+  if(redund.length){ cov.push(`Beberapa butir <b>nyaris bertumpuk</b> kesukarannya (mis. ${redund.slice(0,3).map(p=>`<code>${esc(p[0])}</code>≈<code>${esc(p[1])}</code>`).join(", ")}) sehingga sebagian informasinya redundan.`); actions.push("Pertimbangkan menyederhanakan butir-butir yang kesukarannya nyaris identik."); }
+  if(nearCeil+exHi>0) cov.push(`${nearCeil+exHi} responden berada pada/di atas butir tersulit (gejala langit-langit).`);
+  if(nearFloor+exLo>0) cov.push(`${nearFloor+exLo} responden berada pada/di bawah butir termudah (gejala lantai).`);
+  if(cov.length) h+=`<ul>`+cov.map(c=>`<li>${c}</li>`).join("")+`</ul>`;
+
+  // ===== ITEM FIT (prioritised, named) =====
+  h+=`<h3>Kecocokan butir dengan model</h3>`;
+  if(underfit.length===0&&overfit.length===0&&negpt.length===0){
+    h+=`<p>Seluruh butir berada pada rentang baik (MNSQ 0,5–1,5, point-measure positif). Tidak ada butir yang perlu dibuang.</p>`;
+  } else {
+    if(underfit.length){ h+=`<p><b>${underfit.length} butir “berisik” (underfit, MNSQ&gt;1,5)</b> — paling prioritas karena merusak pengukuran:</p><ul>`;
+      underfit.forEach(it=>{h+=`<li><code>${esc(it.name)}</code>: infit ${F(it.infit)}, outfit ${F(it.outfit)}${it.pm!=null?`, pt-measure ${F(it.pm)}`:''} — banyak jawaban tak terduga.${it.pm!=null&&it.pm<0.3?' Korelasi rendah/negatif: cek apakah butir ini terbalik atau menyimpang dari konstruk.':''}</li>`;});
+      h+=`</ul>`; actions.push(`Tinjau/revisi redaksi butir underfit: ${underfit.map(i=>i.name).join(", ")}${underfit.length>1?' (mulai dari yang MNSQ tertinggi)':''}.`); }
+    if(overfit.length){ h+=`<p><b>${overfit.length} butir terlalu “mudah ditebak” (overfit, MNSQ&lt;0,5)</b>: <code>${overfit.map(i=>esc(i.name)).join("</code>, <code>")}</code>. Tidak merusak, tetapi informasinya tumpang tindih dengan butir lain — boleh dipertahankan atau diringkas.</p>`; }
+    if(negpt.length){ const only=negpt.filter(it=>!underfit.includes(it)); if(only.length) h+=`<p>Point-measure rendah/negatif pada <code>${only.map(i=>esc(i.name)).join("</code>, <code>")}</code> — periksa arah/keterbalikan butir.</p>`; }
+  }
+  if(watch.length) h+=`<p class="muted">Cermati (di luar 0,7–1,3 namun masih wajar): ${watch.map(i=>`<code>${esc(i.name)}</code>`).join(", ")}.</p>`;
+
+  // ===== CATEGORY =====
+  h+=`<h3>Fungsi pilihan jawaban</h3>`;
+  if(A.ordered&&monoAvg&&rare.length===0){
+    h+=`<p>Pilihan jawaban (skala ${D.lo}–${D.hi}) <b>berfungsi baik</b>: ambang Andrich terurut naik dan rerata ukuran tiap kategori meningkat konsisten. Responden membedakan tiap pilihan sebagaimana mestinya.</p>`;
+  } else {
+    let cp=[];
+    if(!A.ordered){ cp.push(`<b>Ambang kategori tidak terurut (disordered)</b> — sebagian kategori tidak menempati urutan yang diharapkan pada garis ukur.`); actions.push("Gabungkan kategori berdekatan (mis. skala 5 → 4 titik) lalu analisis ulang hingga ambang terurut."); }
+    if(rare.length){ cp.push(`Kategori jarang dipilih: ${rare.map(c=>`<b>${c.cat+D.lo}</b> (${F(c.pct,1)}%)`).join(", ")} — kandidat untuk digabung.`); if(A.ordered)actions.push(`Pertimbangkan menggabung kategori yang jarang dipakai (${rare.map(c=>c.cat+D.lo).join(", ")}).`); }
+    if(!monoAvg) cp.push(`Rerata ukuran antar kategori tidak naik monoton — tanda kategori belum dipahami secara berjenjang oleh responden.`);
+    h+=`<ul>`+cp.map(c=>`<li>${c}</li>`).join("")+`</ul>`;
+  }
+
+  // ===== PERSON FIT =====
+  if(misP.length){
+    h+=`<h3>Responden dengan pola menyimpang</h3>`;
+    h+=`<p><b>${misP.length} responden</b> berpola tak terduga (MNSQ&gt;2), mis. ${misP.slice(0,4).map(p=>`<code>${esc(String(p.id))}</code> (${F(Math.max(p.infit,p.outfit))})`).join(", ")}. Ini bisa berarti pengisian asal/tidak serius atau kasus istimewa — layak dicek; bila banyak, periksa juga kemungkinan instrumen mengukur lebih dari satu dimensi.</p>`;
+    if(misP.length>Math.max(2,0.1*N)) actions.push("Periksa keseriusan pengisian responden menyimpang; pertimbangkan uji unidimensionalitas.");
+  }
+
+  // ===== SUBSTANTIVE READING =====
+  h+=`<h3>Pembacaan substantif</h3>`;
+  h+=`<p>Pernyataan yang <b>paling sulit disetujui</b> responden adalah <code>${esc(hardest.name)}</code> (${F(hardest.measure)} logit) — aspek yang paling jarang diakui/dialami. Yang <b>paling mudah disetujui</b> adalah <code>${esc(easiest.name)}</code> (${F(easiest.measure)} logit) — paling banyak disepakati. Urutan ini bisa kamu maknai sesuai isi tiap butir untuk menyimpulkan aspek mana dari konstruk yang paling kuat/lemah pada respondenmu.</p>`;
+
+  // ===== ACTION LIST (dynamic) =====
+  h+=`<h3>Langkah perbaikan yang disarankan</h3>`;
+  if(actions.length){ h+=`<ol>`+actions.map(a=>`<li>${a}</li>`).join("")+`</ol>`; }
+  else { h+=`<p>Tidak ada perbaikan mendesak — instrumen dapat langsung digunakan. Untuk publikasi, verifikasi silang dengan Winsteps/R tetap dianjurkan.</p>`; }
+
+  // ===== DATA NOTES =====
+  const exP=A.person.filter(p=>p.extreme).length, exI=A.item.filter(it=>it.extreme).length;
+  h+=`<h3>Catatan data</h3><ul>`;
+  h+=`<li>${N} responden, ${I} butir, skala ${D.lo}–${D.hi} (${m+1} kategori).</li>`;
+  if(rev.length)h+=`<li>Butir dibalik (reverse): no. ${rev.join(", ")}.</li>`;
+  if(nMiss)h+=`<li>${nMiss} sel kosong ditangani dengan estimasi dari respons tersedia.</li>`;
+  if(exP)h+=`<li>${exP} responden ekstrem (semua min/maks) — dikeluarkan dari reliabilitas.</li>`;
+  if(exI)h+=`<li>${exI} butir ekstrem — tak memberi informasi pemisah.</li>`;
+  h+=`</ul>`;
+
+  h+=`<details class="note"><summary>Cara membaca angka utama</summary>
+    <p><b>Logit</b>: satuan ukur Rasch yang interval. Responden makin tinggi = makin tinggi konstruk; butir makin tinggi = makin sulit disetujui.</p>
+    <p><b>MNSQ</b>: kecocokan respons dengan model (ideal 1,0). <b>Outfit</b> peka pada jawaban menyimpang segelintir responden; <b>Infit</b> peka pada pola di sekitar lokasi butir. <b>ZSTD</b> uji-z dari MNSQ; pada sampel besar mudah signifikan, jadi utamakan MNSQ.</p>
+    <p><b>Pt-Measure</b>: korelasi butir dengan ukuran responden; harus positif.</p>
+    </details>`;
+  el.innerHTML=h;
+}
+
+/* ---------- Winsteps / Ministep-style text tables ---------- */
+function buildWinsteps(D){
+  const {X,mask,res,m,A,lo}=D; const {theta,delta,tau}=res;
+  const N=X.length, I=X[0].length;
+  // ---- cell pre-pass: exact match %, expected pt-measure ----
+  const iObs=new Array(I).fill(0), iN=new Array(I).fill(0), iExp=new Array(I).fill(0), iEv=[], iTh=[];
+  const pObs=new Array(N).fill(0), pN=new Array(N).fill(0), pExp=new Array(N).fill(0), pEv=[], pDv=[];
+  for(let i=0;i<I;i++){iEv.push([]);iTh.push([]);}
+  for(let n=0;n<N;n++){pEv.push([]);pDv.push([]);}
+  for(let n=0;n<N;n++)for(let i=0;i<I;i++){ if(!mask[n][i])continue;
+    const P=categoryProbs(theta[n],delta[i],tau); const [E]=meanVar(P);
+    let rd=Math.round(E); if(rd<0)rd=0; if(rd>m)rd=m;
+    const x=X[n][i];
+    iN[i]++; if(x===rd)iObs[i]++; iExp[i]+=P[rd]; iEv[i].push(E); iTh[i].push(theta[n]);
+    pN[n]++; if(x===rd)pObs[n]++; pExp[n]+=P[rd]; pEv[n].push(E); pDv[n].push(delta[i]);
+  }
+  const itemExtra={}, persExtra={};
+  A.item.forEach(it=>itemExtra[it.i]={obs:iObs[it.i]/Math.max(iN[it.i],1)*100, exp:iExp[it.i]/Math.max(iN[it.i],1)*100, epm:pearson(iEv[it.i],iTh[it.i])});
+  A.person.forEach(p=>persExtra[p.n]={obs:pObs[p.n]/Math.max(pN[p.n],1)*100, exp:pExp[p.n]/Math.max(pN[p.n],1)*100, pm:-pearson(pDv[p.n],X[p.n].filter((_,i)=>mask[p.n][i]))});
+
+  // ---- helpers ----
+  const nf=(x,d)=>x==null||!Number.isFinite(x)?"":x.toFixed(d);
+  const ctr=(s,w)=>{s=String(s);if(s.length>=w)return s.slice(0,w);const t=w-s.length,l=Math.floor(t/2);return " ".repeat(l)+s+" ".repeat(t-l);};
+  function makeTbl(cols, cellRows){
+    const bord=(ch,j)=>{let s="+";cols.forEach((c,i)=>{if(c.div&&i>0)s+=j;s+=ch.repeat(c.w);});return s+"+";};
+    const hdr=a=>{let s="|";cols.forEach((c,i)=>{if(c.div&&i>0)s+="|";s+=ctr(a[i],c.w);});return s+"|";};
+    const row=a=>{let s="|";cols.forEach((c,i)=>{if(c.div&&i>0)s+="|";const v=a[i]==null?"":String(a[i]);s+=c.a==='l'?(" "+v).padEnd(c.w):v.padStart(c.w);});return s+"|";};
+    const o=[bord("-","-"),hdr(cols.map(c=>c.t1)),hdr(cols.map(c=>c.t2)),bord("-","+")];
+    cellRows.forEach(r=>o.push(r==="SEP"?bord("-","+"):row(r)));
+    o.push(bord("-","-")); return o.join("\n");
+  }
+  // ---- summary block (Table 3.1) ----
+  function relFrom(arr, seFn){
+    if(arr.length<2)return {sd:0,rmse:0,tsd:0,sep:0,rel:0};
+    const meas=arr.map(a=>a.measure), mm=mean(meas);
+    const sd2=meas.reduce((s,x)=>s+(x-mm)*(x-mm),0)/arr.length; // population SD (Winsteps)
+    const mse=arr.reduce((s,a)=>{const e=seFn(a);return s+e*e;},0)/arr.length;
+    const tsd=Math.sqrt(Math.max(sd2-mse,0)), rmse=Math.sqrt(mse);
+    const sep=rmse>0?tsd/rmse:0, rel=sd2>0?Math.max(0,Math.min(1,(sd2-mse)/sd2)):0;
+    return {sd:Math.sqrt(sd2),rmse,tsd,sep,rel};
+  }
+  function summary(arr, labelN, kind){ // kind: 'PERSON'|'ITEM'
+    const cols=[
+      {t1:"TOTAL",t2:"SCORE",w:9,a:'r'},{t1:"",t2:"COUNT",w:8,a:'r'},
+      {t1:"",t2:"MEASURE",w:9,a:'r'},{t1:"MODEL",t2:"S.E.",w:8,a:'r'},
+      {t1:"INFIT",t2:"MNSQ",w:7,a:'r',div:true},{t1:"",t2:"ZSTD",w:7,a:'r'},
+      {t1:"OUTFIT",t2:"MNSQ",w:7,a:'r',div:true},{t1:"",t2:"ZSTD",w:7,a:'r'}];
+    const tot=arr.map(a =>
+                               kind === 'PERSON'
+                                     ? a.raw + a.count * lo
+                                     : a.total + a.count * lo
+                          ),
+                         cnt=arr.map(a=>a.count),
+                         me=arr.map(a=>a.measure), se=arr.map(a=>a.se),
+          im=arr.map(a=>a.infit), iz=arr.map(a=>a.zin), om=arr.map(a=>a.outfit), oz=arr.map(a=>a.zout);
+    const agg=(v,f)=>f(v);
+    const sd=v=>{const mm=mean(v);return Math.sqrt(v.reduce((s,x)=>s+(x-mm)*(x-mm),0)/v.length);};
+    const mkRow=(tag,f)=>[tag.padEnd(0), nf(f(tot),1),nf(f(cnt),1),nf(f(me),2),nf(f(se),2),nf(f(im),2),nf(f(iz),1),nf(f(om),2),nf(f(oz),1)];
+    // first label column added separately -> prepend a tag column
+    const cols2=[{t1:"",t2:"",w:6,a:'l'}].concat(cols);
+    const rows=[
+      mkRow("MEAN",mean),mkRow("S.D.",sd),
+      mkRow("MAX.",v=>Math.max(...v)),mkRow("MIN.",v=>Math.min(...v))];
+    let out=`SUMMARY OF ${labelN} MEASURED ${kind}\n`+makeTbl(cols2,rows)+"\n";
+    const model=relFrom(arr,a=>a.se), real=relFrom(arr,a=>a.se*Math.sqrt(Math.max(a.infit,1)));
+    const lab=kind==='PERSON'?'PERSON':'ITEM';
+    out+=`REAL  RMSE ${nf(real.rmse,2)}  TRUE SD ${nf(real.tsd,2)}  SEPARATION ${nf(real.sep,2)}  ${lab} RELIABILITY ${nf(real.rel,2)}\n`;
+    out+=`MODEL RMSE ${nf(model.rmse,2)}  TRUE SD ${nf(model.tsd,2)}  SEPARATION ${nf(model.sep,2)}  ${lab} RELIABILITY ${nf(model.rel,2)}\n`;
+    out+=`S.E. OF ${lab} MEAN = ${nf(sd(me)/Math.sqrt(arr.length),2)}\n`;
+    return out;
+  }
+  // ---- item / person statistics tables (13/14, 17/18) ----
+  const itemCols=[
+    {t1:"ENTRY",t2:"NUMBER",w:7,a:'r'},{t1:"TOTAL",t2:"SCORE",w:7,a:'r'},{t1:"TOTAL",t2:"COUNT",w:7,a:'r'},
+    {t1:"",t2:"MEASURE",w:9,a:'r'},{t1:"MODEL",t2:"S.E.",w:7,a:'r'},
+    {t1:"INFIT",t2:"MNSQ",w:6,a:'r',div:true},{t1:"",t2:"ZSTD",w:6,a:'r'},
+    {t1:"OUTFIT",t2:"MNSQ",w:6,a:'r',div:true},{t1:"",t2:"ZSTD",w:6,a:'r'},
+    {t1:"PTMEA",t2:"CORR.",w:6,a:'r',div:true},{t1:"",t2:"EXP.",w:6,a:'r'},
+    {t1:"EXACT",t2:"OBS%",w:6,a:'r',div:true},{t1:"MATCH",t2:"EXP%",w:6,a:'r'},
+    {t1:"",t2:"ITEM",w:14,a:'l',div:true}];
+  const itemRow=it=>[it.i+1, it.total + it.count * lo, it.count, nf(it.measure,2), nf(it.se,2),
+    nf(it.infit,2), nf(it.zin,1), nf(it.outfit,2), nf(it.zout,1),
+    nf(it.pm,2), nf(itemExtra[it.i].epm,2), nf(itemExtra[it.i].obs,1), nf(itemExtra[it.i].exp,1), it.name+(it.extreme?" (EXTREME)":"")];
+  const personCols=[
+    {t1:"ENTRY",t2:"NUMBER",w:7,a:'r'},{t1:"TOTAL",t2:"SCORE",w:7,a:'r'},{t1:"TOTAL",t2:"COUNT",w:7,a:'r'},
+    {t1:"",t2:"MEASURE",w:9,a:'r'},{t1:"MODEL",t2:"S.E.",w:7,a:'r'},
+    {t1:"INFIT",t2:"MNSQ",w:6,a:'r',div:true},{t1:"",t2:"ZSTD",w:6,a:'r'},
+    {t1:"OUTFIT",t2:"MNSQ",w:6,a:'r',div:true},{t1:"",t2:"ZSTD",w:6,a:'r'},
+    {t1:"PTMEA",t2:"CORR.",w:6,a:'r',div:true},
+    {t1:"EXACT",t2:"OBS%",w:6,a:'r',div:true},{t1:"MATCH",t2:"EXP%",w:6,a:'r'},
+    {t1:"",t2:"PERSON",w:14,a:'l',div:true}];
+  const personRow=p=>[p.n+1, p.raw + p.count * lo, p.count, nf(p.measure,2), nf(p.se,2),
+    nf(p.infit,2), nf(p.zin,1), nf(p.outfit,2), nf(p.zout,1),
+    nf(persExtra[p.n].pm,2), nf(persExtra[p.n].obs,1), nf(persExtra[p.n].exp,1), String(p.id)+(p.extreme?" (EXTREME)":"")];
+
+  const itemsM=A.item.slice().sort((a,b)=>b.measure-a.measure);
+  const itemsE=A.item.slice().sort((a,b)=>a.i-b.i);
+  const personsM=A.person.slice().sort((a,b)=>b.measure-a.measure);
+  const neI=A.item.filter(x=>!x.extreme), neP=A.person.filter(x=>!x.extreme);
+
+  // ---- category structure (Table 3.2) ----
+  const catCols=[
+    {t1:"CATEGORY",t2:"LABEL",w:9,a:'r'},{t1:"OBSERVED",t2:"COUNT",w:9,a:'r'},{t1:"",t2:"%",w:6,a:'r'},
+    {t1:"OBSVD",t2:"AVRGE",w:8,a:'r',div:true},{t1:"SAMPLE",t2:"EXPECT",w:8,a:'r'},
+    {t1:"INFIT",t2:"MNSQ",w:7,a:'r',div:true},{t1:"OUTFIT",t2:"MNSQ",w:7,a:'r'},
+    {t1:"STRUCTURE",t2:"CALIBRATN",w:10,a:'r',div:true},{t1:"CATEGORY",t2:"MEASURE",w:9,a:'r'}];
+  const catRows=A.category.map(c=>[c.cat+lo, c.count, nf(c.pct,1),
+    nf(c.avg,2), nf(c.expect,2), nf(c.infit,2), nf(c.outfit,2),
+    c.threshold==null?"NONE":nf(c.threshold,2), c.catMeasure==null?"( )":nf(c.catMeasure,2)]);
+
+  // ---- assemble ----
+  const L="=".repeat(80);
+  let s="";
+  s+=L+"\nTABLE 3.1   SUMMARY STATISTICS\n"+L+"\n\n";
+  s+=summary(neP, neP.length, 'PERSON')+"\n";
+  s+=`PERSON RAW SCORE-TO-MEASURE CORRELATION = ${nf(pearson(neP.map(p=>p.raw),neP.map(p=>p.measure)),2)}\n`;
+  s+=`CRONBACH ALPHA (KR-20) PERSON RAW SCORE "TEST" RELIABILITY = ${nf(A.alpha,2)}\n\n`;
+  s+=summary(neI, neI.length, 'ITEM')+"\n";
+
+  s+="\n"+L+"\nTABLE 13.1   ITEM STATISTICS:  MEASURE ORDER\n"+L+"\n";
+  s+=makeTbl(itemCols, itemsM.map(itemRow))+"\n";
+  s+="\n"+L+"\nTABLE 14.1   ITEM STATISTICS:  ENTRY ORDER\n"+L+"\n";
+  s+=makeTbl(itemCols, itemsE.map(itemRow))+"\n";
+
+  s+="\n"+L+"\nTABLE 17.1   PERSON STATISTICS:  MEASURE ORDER\n"+L+"\n";
+  s+=makeTbl(personCols, personsM.map(personRow))+"\n";
+
+  s+="\n"+L+"\nTABLE 3.2   SUMMARY OF CATEGORY STRUCTURE\n"+L+"\n";
+  s+=makeTbl(catCols, catRows)+"\n";
+  s+=`\nThresholds (STRUCTURE CALIBRATN) ${A.ordered?"berurutan naik -> kategori berfungsi baik.":"TIDAK berurutan (disordered) -> pertimbangkan menggabung kategori."}\n`;
+  return s;
+}
+
+/* ---------- export ---------- */
+function dl(name,rows){
+  const csv=rows.map(r=>r.map(c=>{const s=String(c==null?"":c);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(",")).join("\n");
+  const b=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"}); const u=URL.createObjectURL(b);
+  const a=document.createElement("a");a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);
+}
+$("expItems").onclick=()=>{const A=LAST.A;const rows=[["Butir","Ukuran_logit","SE","Infit_MNSQ","Infit_ZSTD","Outfit_MNSQ","Outfit_ZSTD","PtMeasure","Ekstrem"]];
+  A.item.slice().sort((a,b)=>b.measure-a.measure).forEach(it=>rows.push([it.name,it.measure.toFixed(4),it.se.toFixed(4),it.infit.toFixed(3),it.zin.toFixed(2),it.outfit.toFixed(3),it.zout.toFixed(2),it.pm==null?"":it.pm.toFixed(3),it.extreme?"ya":"tidak"]));
+  dl("rasch_butir.csv",rows);};
+$("expPersons").onclick=()=>{const A=LAST.A;const rows=[["ID","Skor_mentah","Skor_maks","Ukuran_logit","SE","Infit_MNSQ","Outfit_MNSQ","Ekstrem"]];
+  A.person.slice().sort((a,b)=>b.measure-a.measure).forEach(p=>rows.push([p.id,p.raw,p.maxraw,p.measure.toFixed(4),p.se.toFixed(4),p.infit.toFixed(3),p.outfit.toFixed(3),p.extreme?"ya":"tidak"]));
+  dl("rasch_responden.csv",rows);};
+$("dlWs").onclick=()=>{const txt=$("wsOut").textContent;const b=new Blob([txt],{type:"text/plain;charset=utf-8"});
+  const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="rasch_winsteps_output.txt";a.click();URL.revokeObjectURL(u);};
+$("cpWs").onclick=async()=>{try{await navigator.clipboard.writeText($("wsOut").textContent);$("cpMsg").textContent="Tersalin ke clipboard.";}
+  catch(e){$("cpMsg").textContent="Gagal menyalin — pilih teks lalu salin manual.";}
+  setTimeout(()=>{$("cpMsg").textContent="";},2500);};
+
+/* ---------- file upload & example ---------- */
+$("file").onchange=e=>{const f=e.target.files[0];if(!f)return;$("fileName").textContent=f.name;
+  const r=new FileReader();r.onload=()=>{$("data").value=r.result;};r.readAsText(f);};
+$("runBtn").onclick=run;
+$("exampleBtn").onclick=()=>{
+  // 24 responden × 8 butir, skala 1–5; B6 sengaja "berisik" (misfit) & B3 reverse-like
+  $("data").value=EXAMPLE; $("hasHeader").checked=true; $("hasId").checked=true; $("revItems").value="";
+  $("fileName").textContent="(data contoh dimuat)";
+};
+const EXAMPLE=`ID,B1,B2,B3,B4,B5,B6,B7,B8
+S01,5,4,5,4,4,2,2,2
+S02,5,4,4,2,3,3,1,3
+S03,4,5,3,3,3,4,1,1
+S04,3,3,1,4,1,2,1,2
+S05,4,2,4,4,4,5,1,1
+S06,5,3,1,3,2,3,1,1
+S07,4,2,5,3,3,4,3,1
+S08,5,3,4,5,5,4,4,4
+S09,4,4,3,2,2,3,3,1
+S10,5,1,3,3,1,3,2,1
+S11,5,5,4,4,3,5,2,1
+S12,4,5,4,3,3,2,2,4
+S13,5,4,5,4,3,5,3,2
+S14,5,1,2,2,3,4,2,1
+S15,5,4,5,3,3,1,1,1
+S16,5,5,3,4,4,5,3,2
+S17,5,2,2,2,1,2,1,1
+S18,5,4,2,4,3,1,2,2
+S19,1,1,1,1,1,2,1,1
+S20,3,2,2,1,1,1,1,2
+S21,3,2,1,1,1,2,2,1
+S22,3,3,3,2,3,1,1,2
+S23,4,1,3,3,1,3,1,1
+S24,3,5,4,4,4,5,3,3
+S25,5,3,2,4,2,5,4,1
+S26,4,4,4,2,2,5,2,2
+S27,1,1,1,1,1,2,1,1
+S28,5,4,2,1,3,2,1,1
+S29,3,5,3,3,4,4,1,1
+S30,5,4,4,2,4,5,3,2
+S31,2,1,2,2,1,5,1,1
+S32,5,2,2,3,3,2,4,3
+S33,4,4,2,2,1,4,2,1
+S34,4,3,2,1,3,3,1,1
+S35,5,5,5,5,4,3,4,5
+S36,3,4,4,4,1,3,3,1
+S37,4,4,3,4,2,3,1,2
+S38,4,5,3,4,3,5,3,1
+S39,5,5,4,2,2,4,1,1
+S40,4,3,2,4,3,1,2,1`;
+</script>
+</body>
+</html>
