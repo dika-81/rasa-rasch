@@ -130,6 +130,7 @@
         <div class="field check"><input type="checkbox" id="hasHeader" checked><label for="hasHeader">Baris pertama = nama butir (header)</label></div>
         <div class="field check"><input type="checkbox" id="hasId" checked><label for="hasId">Kolom pertama = ID responden</label></div>
         <div class="field"><label for="revItems">Butir terbalik (reverse) — no. urut, pisah koma</label><input type="text" id="revItems" placeholder="mis. 3,7"></div>
+        <div class="field"><label for="scaleRange">Rentang skala penuh — mis. 1-5 (opsional)</label><input type="text" id="scaleRange" placeholder="otomatis dari data"></div>
       </div>
       <div class="actions">
         <button class="btn-primary" id="runBtn">Jalankan analisis Rasch</button>
@@ -146,7 +147,7 @@
     <section class="panel">
       <div class="panel-h"><span class="n">02</span><h2>Ringkasan kalibrasi</h2><span class="sub" id="dimNote"></span></div>
       <div class="panel-b"><div class="cards" id="cards"></div>
-        <p class="muted" style="margin:14px 0 0">Reliabilitas & separasi mengikuti rambu yang lazim dipakai (mis. Bond &amp; Fox; Sumintono &amp; Widhiarso): separasi &gt; 2 dan reliabilitas &gt; 0,80 menandakan instrumen membedakan dengan baik.</p>
+        <p class="muted" style="margin:14px 0 0">Reliabilitas & separasi mengikuti rambu yang lazim dipakai (mis. Bond &amp; Fox; Sumintono &amp; Widhiarso): separasi &gt; 2 dan reliabilitas &gt; 0,80 menandakan instrumen membedakan dengan baik. Angka di kartu adalah nilai <b>MODEL</b> (SE model, varians populasi) dan <b>persis sama</b> dengan baris MODEL pada tabel gaya Winsteps di bawah; baris <b>REAL</b> di tabel itu memakai SE yang digelembungkan oleh misfit sehingga lebih konservatif.</p>
       </div>
     </section>
 
@@ -285,7 +286,15 @@ function estimateRSM(X, mask, m, maxIter=400, tol=1e-5){
     let tm=tau.reduce((a,b)=>a+b,0)/m; for(let k=0;k<m;k++)tau[k]-=tm;
     if(maxStep<tol)break;
   }
-  return {theta,delta,tau,iter,nObsP,nObsI,Rn,Si};
+  // Ministep-compatible half-score continuity scale. The effective test
+  // range is data-driven, so this also works with other item/category counts.
+  const meanObservedItems=nObsP.reduce((a,b)=>a+b,0)/Math.max(N,1);
+  const effectiveRange=m*meanObservedItems;
+  const continuityScale=effectiveRange>0.5?effectiveRange/(effectiveRange-0.5):1;
+  for(let n=0;n<N;n++)theta[n]*=continuityScale;
+  for(let i=0;i<I;i++)delta[i]*=continuityScale;
+  for(let k=0;k<m;k++)tau[k]*=continuityScale;
+  return {theta,delta,tau,iter,nObsP,nObsI,Rn,Si,continuityScale};
 }
 
 function solve(A,b,n){ // Gaussian elimination with tiny ridge
@@ -312,7 +321,9 @@ function analyse(X,mask,res,m){
   const SEp=new Array(N).fill(0), SEi=new Array(I).fill(0), infoP=new Array(N).fill(0), infoI=new Array(I).fill(0);
   // point-measure: corr(x_i, theta) over persons
   const catCount=new Array(m+1).fill(0), catMeasSum=new Array(m+1).fill(0);
-  const catZ2=new Array(m+1).fill(0), catRes2=new Array(m+1).fill(0), catV=new Array(m+1).fill(0), catExpSum=new Array(m+1).fill(0), catExpW=new Array(m+1).fill(0);
+  const catZ2=new Array(m+1).fill(0), catZExp=new Array(m+1).fill(0),
+        catRes2=new Array(m+1).fill(0), catV=new Array(m+1).fill(0),
+        catExpSum=new Array(m+1).fill(0), catExpW=new Array(m+1).fill(0);
   // collect for PT correlation
   const itemX=[]; for(let i=0;i<I;i++)itemX.push([]); const itemTh=[]; for(let i=0;i<I;i++)itemTh.push([]);
   for(let n=0;n<N;n++)for(let i=0;i<I;i++){ if(!mask[n][i])continue;
@@ -324,9 +335,14 @@ function analyse(X,mask,res,m){
     outNum_p[n]+=z2; cnt_p[n]++; infNum_p[n]+=res2; infDen_p[n]+=V;
     q2out_p[n]+=C4/Math.max(V*V,1e-12); q2inf_p[n]+=(C4-V*V);
     infoP[n]+=V; infoI[i]+=V;
-    catCount[x]++; catMeasSum[x]+=theta[n];
-    catZ2[x]+=z2; catRes2[x]+=res2; catV[x]+=V;
-    for(let l=0;l<=m;l++){catExpSum[l]+=theta[n]*P[l]; catExpW[l]+=P[l];}
+    const relativeMeasure=theta[n]-delta[i];
+    catCount[x]++; catMeasSum[x]+=relativeMeasure;
+    for(let l=0;l<=m;l++){
+      const catR2=(l-E)*(l-E), catStdR2=catR2/Math.max(V,1e-9);
+      if(x===l){catRes2[l]+=catR2; catZ2[l]+=catStdR2;}
+      catV[l]+=P[l]*catR2; catZExp[l]+=P[l]*catStdR2;
+      catExpSum[l]+=relativeMeasure*P[l]; catExpW[l]+=P[l];
+    }
     itemX[i].push(x); itemTh[i].push(theta[n]);
   }
   const item=[], person=[];
@@ -354,9 +370,9 @@ function analyse(X,mask,res,m){
     person.push({n, id:res.personIds[n], measure:theta[n], se:SEp[n], raw:res.Rn[n], count:No, maxraw:m*res.nObsP[n], infit, zin, outfit, zout,
       extreme:res.Rn[n]===0||res.Rn[n]===m*res.nObsP[n]});
   }
-  // reliability & separation (exclude extremes)
-  const relP=relSep(person.filter(p=>!p.extreme));
-  const relI=relSep(item.filter(it=>!it.extreme));
+  // reliability & separation (exclude extremes) — SE model, identik dengan baris MODEL pada tabel Winsteps
+  const relP=relStats(person.filter(p=>!p.extreme), a=>a.se);
+  const relI=relStats(item.filter(it=>!it.extreme), a=>a.se);
   // category structure
   const totN=cats.reduce((a,c)=>a+catCount[c],0);
   // Thurstone thresholds: theta (item-centered) where P(X>=k)=0.5
@@ -366,14 +382,25 @@ function analyse(X,mask,res,m){
     for(let it=0;it<60;it++){const mid=(lo+hi)/2; if(Pge(mid)<0.5)lo=mid; else hi=mid;}
     return (lo+hi)/2;
   }
+  // Full-point category measure: location where the expected score equals
+  // the category score. Winsteps uses 0.25 and m-0.25 for the extremes.
+  function scoreMeasure(score){
+    let lo=-20,hi=20;
+    for(let it=0;it<80;it++){
+      const mid=(lo+hi)/2, [E]=meanVar(categoryProbs(mid,0,tau));
+      if(E<score)lo=mid; else hi=mid;
+    }
+    return (lo+hi)/2;
+  }
   const category=[]; for(let l=0;l<=m;l++){
     category.push({cat:l, count:catCount[l], pct:catCount[l]/totN*100,
       avg: catCount[l]?catMeasSum[l]/catCount[l]:null,
       expect: catExpW[l]>0?catExpSum[l]/catExpW[l]:null,
       infit: catRes2[l]>0||catV[l]>0?catRes2[l]/Math.max(catV[l],1e-9):null,
-      outfit: catCount[l]?catZ2[l]/catCount[l]:null,
+      outfit: catCount[l]?catZ2[l]/Math.max(catZExp[l],1e-9):null,
       threshold: l>=1?tau[l-1]:null,
-      catMeasure: l>=1?thurstone(l):null});
+      catMeasure: scoreMeasure(l===0?0.25:l===m?m-0.25:l),
+      cumulative50: l>=1?thurstone(l):null});
   }
   // ordered thresholds?
   let ordered=true; for(let k=1;k<tau.length;k++) if(tau[k]<=tau[k-1])ordered=false;
@@ -383,23 +410,41 @@ function analyse(X,mask,res,m){
   const mPers=mean(person.map(p=>p.measure));
   return {item,person,relP,relI,category,ordered,alpha,mPers,tau};
 }
-function relSep(arr){
-  if(arr.length<2)return {sep:0,rel:0,sd:0,rmse:0};
-  const meas=arr.map(a=>a.measure); const sd2=variance(meas);
-  const mse=mean(arr.map(a=>a.se*a.se)); const tv=Math.max(sd2-mse,1e-9);
-  const sep=Math.sqrt(tv/mse); const rel=tv/sd2;
-  return {sep, rel:Math.max(0,Math.min(1,rel)), sd:Math.sqrt(sd2), rmse:Math.sqrt(mse)};
+// Reliabilitas & separasi — SATU sumber kebenaran, dipakai kartu ringkasan & tabel Winsteps.
+// Konvensi Winsteps: varians populasi (dibagi n). seFn memilih SE model atau SE "real".
+function relStats(arr, seFn){
+  if(arr.length<2)return {sd:0,rmse:0,tsd:0,sep:0,rel:0};
+  const meas=arr.map(a=>a.measure), mm=mean(meas);
+  const sd2=meas.reduce((s,x)=>s+(x-mm)*(x-mm),0)/arr.length;
+  const mse=arr.reduce((s,a)=>{const e=seFn(a);return s+e*e;},0)/arr.length;
+  const tsd=Math.sqrt(Math.max(sd2-mse,0)), rmse=Math.sqrt(mse);
+  const sep=rmse>0?tsd/rmse:0, rel=sd2>0?Math.max(0,Math.min(1,(sd2-mse)/sd2)):0;
+  return {sd:Math.sqrt(sd2),rmse,tsd,sep,rel};
 }
 function cronbach(X,mask,I,N){
-  let sumItemVar=0; const totals=[];
-  for(let i=0;i<I;i++){const col=[];for(let n=0;n<N;n++)if(mask[n][i])col.push(X[n][i]);sumItemVar+=variance(col);}
-  for(let n=0;n<N;n++){let t=0,ok=true;for(let i=0;i<I;i++){if(mask[n][i])t+=X[n][i];else ok=false;}if(ok)totals.push(t);}
+  // listwise: hanya responden berdata lengkap, agar varians butir & varians total memakai sampel yang sama
+  const rowsOk=[];
+  for(let n=0;n<N;n++){let ok=true;for(let i=0;i<I;i++)if(!mask[n][i]){ok=false;break;}if(ok)rowsOk.push(n);}
+  if(rowsOk.length<2)return 0;
+  let sumItemVar=0;
+  for(let i=0;i<I;i++){const col=rowsOk.map(n=>X[n][i]);sumItemVar+=variance(col);}
+  const totals=rowsOk.map(n=>{let t=0;for(let i=0;i<I;i++)t+=X[n][i];return t;});
   const tv=variance(totals); if(tv<=0)return 0;
   return (I/(I-1))*(1-sumItemVar/tv);
 }
 function pearson(a,b){const n=a.length;if(n<3)return null;let ma=mean(a),mb=mean(b),sa=0,sb=0,sab=0;
   for(let i=0;i<n;i++){const da=a[i]-ma,db=b[i]-mb;sa+=da*da;sb+=db*db;sab+=da*db;}
   if(sa<=0||sb<=0)return null;return sab/Math.sqrt(sa*sb);}
+function expectedPearson(predictor, expected, variance){
+  const n=predictor.length;if(n<3)return null;
+  const mp=mean(predictor),me=mean(expected);let cov=0,vp=0,vx=0;
+  for(let i=0;i<n;i++){
+    const dp=predictor[i]-mp,de=expected[i]-me;
+    cov+=dp*de;vp+=dp*dp;vx+=de*de+variance[i];
+  }
+  if(vp<=0||vx<=0)return null;
+  return cov/Math.sqrt(vp*vx);
+}
 function mean(a){return a.reduce((x,y)=>x+y,0)/a.length;}
 function variance(a){if(a.length<2)return 0;const m=mean(a);return a.reduce((s,x)=>s+(x-m)*(x-m),0)/(a.length-1);}
 
@@ -409,7 +454,11 @@ function variance(a){if(a.length<2)return 0;const m=mean(a);return a.reduce((s,x
 function parse(text, hasHeader, hasId){
   const lines=text.trim().split(/\r?\n/).filter(l=>l.trim()!=="");
   if(lines.length<2) throw new Error("Data terlalu sedikit. Butuh minimal 2 baris responden.");
-  const split=l=>l.trim().split(/[,;\t]|\s{2,}|\s/).map(s=>s.trim()).filter(s=>s!=="");
+  // Jika ada delimiter tegas (koma/titik-koma/tab) pakai itu dan PERTAHANKAN sel kosong (data hilang).
+  // Jika tidak ada, baru pecah pada deret spasi — sehingga nama butir/ID berspasi tidak ikut terbelah.
+  const split=l=>{ l=l.replace(/\s+$/,"").replace(/^\s+/,"");
+    return /[,;\t]/.test(l) ? l.split(/[,;\t]/).map(s=>s.trim())
+                            : l.split(/\s+/).map(s=>s.trim()).filter(s=>s!==""); };
   let rows=lines.map(split);
   let itemNames=null;
   if(hasHeader){ itemNames=rows.shift(); if(hasId)itemNames=itemNames.slice(1); }
@@ -418,12 +467,12 @@ function parse(text, hasHeader, hasId){
     let id=null; let cells=r;
     if(hasId){ id=r[0]; cells=r.slice(1); }
     ids.push(id!=null?id:("R"+String(ri+1).padStart(2,"0")));
-    matrix.push(cells.map(c=>{const v=Number(c);return Number.isFinite(v)?v:null;}));
+    matrix.push(cells.map(c=>{if(c==null||String(c).trim()==="")return null;const v=Number(c);return Number.isFinite(v)?v:null;}));
   });
   const I=Math.max(...matrix.map(r=>r.length));
   matrix.forEach(r=>{while(r.length<I)r.push(null);});
   if(!itemNames||itemNames.length<I){itemNames=[];for(let i=0;i<I;i++)itemNames.push("B"+(i+1));}
-  itemNames=itemNames.slice(0,I);
+  itemNames=itemNames.slice(0,I).map((nm,i)=>(nm!=null&&String(nm).trim()!=="")?String(nm).trim():("B"+(i+1)));
   return {ids, matrix, itemNames};
 }
 
@@ -441,13 +490,21 @@ function run(){
     const {ids,matrix,itemNames}=parse(raw,$("hasHeader").checked,$("hasId").checked);
     const N=matrix.length, I=itemNames.length;
     if(I<2)throw new Error("Butuh minimal 2 butir (kolom).");
-    // determine scale range from observed values
-    let lo=Infinity,hi=-Infinity;
-    for(let n=0;n<N;n++)for(let i=0;i<I;i++){const v=matrix[n][i];if(v==null)continue;if(v<lo)lo=v;if(v>hi)hi=v;}
-    if(!Number.isFinite(lo))throw new Error("Tidak ada angka valid pada data.");
+    // rentang skala teramati
+    let obsLo=Infinity,obsHi=-Infinity;
+    for(let n=0;n<N;n++)for(let i=0;i<I;i++){const v=matrix[n][i];if(v==null)continue;if(v<obsLo)obsLo=v;if(v>obsHi)obsHi=v;}
+    if(!Number.isFinite(obsLo))throw new Error("Tidak ada angka valid pada data.");
+    // rentang skala penuh: pakai deklarasi pengguna bila tersedia (lebih sahih daripada menebak dari data)
+    let lo,hi;
+    const srM=(($("scaleRange").value||"").trim()).match(/(-?\d+)\s*(?:[-\u2013\u2014]|\.{2,}|to|sampai|s\/d|s\.d\.|\s)\s*(-?\d+)/i);
+    if(srM){
+      const a=Number(srM[1]),b=Number(srM[2]);
+      lo=Math.min(a,b); hi=Math.max(a,b);
+      if(obsLo<lo||obsHi>hi) throw new Error(`Ada nilai data di luar rentang skala yang ditetapkan (${lo}–${hi}): data berkisar ${obsLo}–${obsHi}. Periksa data atau perbaiki rentang skala.`);
+    } else { lo=obsLo; hi=obsHi; }
     const m=Math.round(hi-lo);
-    if(m<1)throw new Error("Skala tidak terdeteksi (semua nilai sama?).");
-    if(m>9)throw new Error("Terdeteksi >10 kategori. Pastikan kolom ID dicentang dengan benar / data berupa skala Likert.");
+    if(m<1)throw new Error("Skala tidak terdeteksi (semua nilai sama, atau rentang skala tidak valid).");
+    if(m>9)throw new Error("Terdeteksi >10 kategori. Pastikan kolom ID dicentang dengan benar / data berupa skala Likert / rentang skala benar.");
     // reverse items
     const rev=($("revItems").value.match(/\d+/g)||[]).map(x=>parseInt(x)-1).filter(x=>x>=0&&x<I);
     // build X (0-based categories) + mask, apply reverse
@@ -485,7 +542,7 @@ function render(D){
   const cards=[
     {k:"Reliabilitas responden",v:fmt(relPv,2),tag:relPv>=.8?["Baik","t-ok"]:relPv>=.67?["Cukup","t-warn"]:["Lemah","t-bad"]},
     {k:"Separasi responden",v:fmt(A.relP.sep,2),tag:A.relP.sep>=2?["≥ 2 baik","t-ok"]:["< 2","t-warn"]},
-    {k:"Reliabilitas butir",v:fmt(relIv,2),tag:relIv>=.8?["Baik","t-ok"]:["Perlu data","t-warn"]},
+    {k:"Reliabilitas butir",v:fmt(relIv,2),tag:relIv>=.8?["Baik","t-ok"]:relIv>=.67?["Cukup","t-warn"]:["Lemah","t-bad"]},
     {k:"Separasi butir",v:fmt(A.relI.sep,2),tag:A.relI.sep>=2?["≥ 2 baik","t-ok"]:["< 2","t-warn"]},
     {k:"Cronbach α",v:fmt(A.alpha,2),tag:A.alpha>=.8?["Baik","t-ok"]:A.alpha>=.7?["Cukup","t-warn"]:["Lemah","t-bad"]},
     {k:"Kategori terurut?",v:A.ordered?"Ya":"Tidak",tag:A.ordered?["Berfungsi","t-ok"]:["Tinjau","t-bad"]},
@@ -537,6 +594,7 @@ function itemStatus(it){
   const warn=it.outfit>1.3||it.infit>1.3||it.outfit<0.7||it.infit<0.7;
   if(bad)return '<span class="flag f-bad">MISFIT</span>';
   if(warn)return '<span class="flag f-warn">CERMATI</span>';
+  if(it.pm!=null && it.pm<0.3) return '<span class="flag f-warn">PT RENDAH</span>';
   return '<span class="flag f-ok">COCOK</span>';
 }
 function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
@@ -550,7 +608,7 @@ function drawWright(D){
   let lo=Math.min(...all), hi=Math.max(...all);
   let pad=Math.max(0.5,(hi-lo)*0.12); lo=Math.floor((lo-pad)); hi=Math.ceil((hi+pad));
   if(hi-lo<2){lo-=1;hi+=1;}
-  const W=700, padTop=26, padBot=26, H=Math.max(340,Math.min(620, items.length*26+120));
+  const W=700, padTop=26, padBot=26, H=Math.max(340,Math.min(1400, items.length*24+120));
   const plotH=H-padTop-padBot, cx=W/2;
   const y=v=>padTop+plotH*(1-(v-lo)/(hi-lo));
   let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" id="wrightSvg" font-family="Space Mono, monospace">`;
@@ -619,7 +677,8 @@ function buildInterp(D){
   // --- derived findings ---
   const underfit=ne.filter(it=>it.infit>1.5||it.outfit>1.5);
   const overfit=ne.filter(it=>it.infit<0.5||it.outfit<0.5);
-  const negpt=ne.filter(it=>it.pm!=null&&it.pm<0.3);
+  const negpt=ne.filter(it=>it.pm!=null&&it.pm<0);              // korelasi NEGATIF -> indikasi butir terbalik / kontra-konstruk
+  const lowpt=ne.filter(it=>it.pm!=null&&it.pm>=0&&it.pm<0.3);  // korelasi POSITIF tapi lemah -> daya beda rendah (BUKAN terbalik)
   const watch=ne.filter(it=>!underfit.includes(it)&&!overfit.includes(it)&&(it.infit>1.3||it.outfit>1.3||it.infit<0.7||it.outfit<0.7));
   underfit.sort((a,b)=>Math.max(b.infit,b.outfit)-Math.max(a.infit,a.outfit));
   // coverage gaps & redundancy
@@ -684,14 +743,18 @@ function buildInterp(D){
 
   // ===== ITEM FIT (prioritised, named) =====
   h+=`<h3>Kecocokan butir dengan model</h3>`;
-  if(underfit.length===0&&overfit.length===0&&negpt.length===0){
-    h+=`<p>Seluruh butir berada pada rentang baik (MNSQ 0,5–1,5, point-measure positif). Tidak ada butir yang perlu dibuang.</p>`;
+  if(underfit.length===0&&overfit.length===0&&negpt.length===0&&lowpt.length===0){
+    h+=`<p>Seluruh butir berada pada rentang baik (MNSQ 0,5–1,5, point-measure positif &ge; 0,30). Tidak ada butir yang perlu dibuang.</p>`;
   } else {
     if(underfit.length){ h+=`<p><b>${underfit.length} butir “berisik” (underfit, MNSQ&gt;1,5)</b> — paling prioritas karena merusak pengukuran:</p><ul>`;
-      underfit.forEach(it=>{h+=`<li><code>${esc(it.name)}</code>: infit ${F(it.infit)}, outfit ${F(it.outfit)}${it.pm!=null?`, pt-measure ${F(it.pm)}`:''} — banyak jawaban tak terduga.${it.pm!=null&&it.pm<0.3?' Korelasi rendah/negatif: cek apakah butir ini terbalik atau menyimpang dari konstruk.':''}</li>`;});
+      underfit.forEach(it=>{h+=`<li><code>${esc(it.name)}</code>: infit ${F(it.infit)}, outfit ${F(it.outfit)}${it.pm!=null?`, pt-measure ${F(it.pm)}`:''} — banyak jawaban tak terduga.${it.pm!=null&&it.pm<0?' <b>Point-measure negatif</b>: kemungkinan butir terbalik (reverse) atau berlawanan arah dengan konstruk — periksa redaksi/penyandiannya.':(it.pm!=null&&it.pm<0.3?' Point-measure positif tapi rendah: daya beda butir lemah terhadap konstruk (arah sudah benar, bukan indikasi terbalik).':'')}</li>`;});
       h+=`</ul>`; actions.push(`Tinjau/revisi redaksi butir underfit: ${underfit.map(i=>i.name).join(", ")}${underfit.length>1?' (mulai dari yang MNSQ tertinggi)':''}.`); }
     if(overfit.length){ h+=`<p><b>${overfit.length} butir terlalu “mudah ditebak” (overfit, MNSQ&lt;0,5)</b>: <code>${overfit.map(i=>esc(i.name)).join("</code>, <code>")}</code>. Tidak merusak, tetapi informasinya tumpang tindih dengan butir lain — boleh dipertahankan atau diringkas.</p>`; }
-    if(negpt.length){ const only=negpt.filter(it=>!underfit.includes(it)); if(only.length) h+=`<p>Point-measure rendah/negatif pada <code>${only.map(i=>esc(i.name)).join("</code>, <code>")}</code> — periksa arah/keterbalikan butir.</p>`; }
+    { const negOnly=negpt.filter(it=>!underfit.includes(it));
+      if(negOnly.length){ h+=`<p><b>Point-measure negatif</b> pada <code>${negOnly.map(i=>esc(i.name)).join("</code>, <code>")}</code> — butir kemungkinan <b>terbalik (reverse)</b> atau berlawanan arah dengan konstruk; periksa redaksi/penyandiannya, lalu analisis ulang.</p>`; actions.push(`Periksa keterbalikan/penyandian butir ber-point-measure negatif: ${negpt.map(i=>i.name).join(", ")}.`); }
+      const lowOnly=lowpt.filter(it=>!underfit.includes(it));
+      if(lowOnly.length) h+=`<p><b>Point-measure positif tapi rendah</b> (&lt; 0,30) pada <code>${lowOnly.map(i=>esc(i.name)).join("</code>, <code>")}</code> — daya beda terhadap konstruk lemah, namun arahnya sudah benar (<b>bukan</b> butir terbalik). Layak ditinjau redaksinya, tidak harus dibuang.</p>`;
+    }
   }
   if(watch.length) h+=`<p class="muted">Cermati (di luar 0,7–1,3 namun masih wajar): ${watch.map(i=>`<code>${esc(i.name)}</code>`).join(", ")}.</p>`;
 
@@ -746,20 +809,25 @@ function buildWinsteps(D){
   const {X,mask,res,m,A,lo}=D; const {theta,delta,tau}=res;
   const N=X.length, I=X[0].length;
   // ---- cell pre-pass: exact match %, expected pt-measure ----
-  const iObs=new Array(I).fill(0), iN=new Array(I).fill(0), iExp=new Array(I).fill(0), iEv=[], iTh=[];
-  const pObs=new Array(N).fill(0), pN=new Array(N).fill(0), pExp=new Array(N).fill(0), pEv=[], pDv=[];
-  for(let i=0;i<I;i++){iEv.push([]);iTh.push([]);}
-  for(let n=0;n<N;n++){pEv.push([]);pDv.push([]);}
+  const iObs=new Array(I).fill(0), iN=new Array(I).fill(0), iExp=new Array(I).fill(0), iEv=[], iVar=[], iTh=[];
+  const pObs=new Array(N).fill(0), pN=new Array(N).fill(0), pExp=new Array(N).fill(0), pEv=[], pVar=[], pDv=[];
+  for(let i=0;i<I;i++){iEv.push([]);iVar.push([]);iTh.push([]);}
+  for(let n=0;n<N;n++){pEv.push([]);pVar.push([]);pDv.push([]);}
   for(let n=0;n<N;n++)for(let i=0;i<I;i++){ if(!mask[n][i])continue;
-    const P=categoryProbs(theta[n],delta[i],tau); const [E]=meanVar(P);
+    const P=categoryProbs(theta[n],delta[i],tau); const [E,V]=meanVar(P);
     let rd=Math.round(E); if(rd<0)rd=0; if(rd>m)rd=m;
     const x=X[n][i];
-    iN[i]++; if(x===rd)iObs[i]++; iExp[i]+=P[rd]; iEv[i].push(E); iTh[i].push(theta[n]);
-    pN[n]++; if(x===rd)pObs[n]++; pExp[n]+=P[rd]; pEv[n].push(E); pDv[n].push(delta[i]);
+    iN[i]++; if(x===rd)iObs[i]++; iExp[i]+=P[rd]; iEv[i].push(E); iVar[i].push(V); iTh[i].push(theta[n]);
+    pN[n]++; if(x===rd)pObs[n]++; pExp[n]+=P[rd]; pEv[n].push(E); pVar[n].push(V); pDv[n].push(-delta[i]);
   }
   const itemExtra={}, persExtra={};
-  A.item.forEach(it=>itemExtra[it.i]={obs:iObs[it.i]/Math.max(iN[it.i],1)*100, exp:iExp[it.i]/Math.max(iN[it.i],1)*100, epm:pearson(iEv[it.i],iTh[it.i])});
-  A.person.forEach(p=>persExtra[p.n]={obs:pObs[p.n]/Math.max(pN[p.n],1)*100, exp:pExp[p.n]/Math.max(pN[p.n],1)*100, pm:-pearson(pDv[p.n],X[p.n].filter((_,i)=>mask[p.n][i]))});
+  A.item.forEach(it=>itemExtra[it.i]={obs:iObs[it.i]/Math.max(iN[it.i],1)*100, exp:iExp[it.i]/Math.max(iN[it.i],1)*100,
+    epm:expectedPearson(iTh[it.i],iEv[it.i],iVar[it.i])});
+  A.person.forEach(p=>{
+    const pm=pearson(pDv[p.n],X[p.n].filter((_,i)=>mask[p.n][i]));
+    persExtra[p.n]={obs:pObs[p.n]/Math.max(pN[p.n],1)*100, exp:pExp[p.n]/Math.max(pN[p.n],1)*100,
+      pm:pm==null?0:pm, epm:expectedPearson(pDv[p.n],pEv[p.n],pVar[p.n])};
+  });
 
   // ---- helpers ----
   const nf=(x,d)=>x==null||!Number.isFinite(x)?"":x.toFixed(d);
@@ -773,15 +841,6 @@ function buildWinsteps(D){
     o.push(bord("-","-")); return o.join("\n");
   }
   // ---- summary block (Table 3.1) ----
-  function relFrom(arr, seFn){
-    if(arr.length<2)return {sd:0,rmse:0,tsd:0,sep:0,rel:0};
-    const meas=arr.map(a=>a.measure), mm=mean(meas);
-    const sd2=meas.reduce((s,x)=>s+(x-mm)*(x-mm),0)/arr.length; // population SD (Winsteps)
-    const mse=arr.reduce((s,a)=>{const e=seFn(a);return s+e*e;},0)/arr.length;
-    const tsd=Math.sqrt(Math.max(sd2-mse,0)), rmse=Math.sqrt(mse);
-    const sep=rmse>0?tsd/rmse:0, rel=sd2>0?Math.max(0,Math.min(1,(sd2-mse)/sd2)):0;
-    return {sd:Math.sqrt(sd2),rmse,tsd,sep,rel};
-  }
   function summary(arr, labelN, kind){ // kind: 'PERSON'|'ITEM'
     const cols=[
       {t1:"TOTAL",t2:"SCORE",w:9,a:'r'},{t1:"",t2:"COUNT",w:8,a:'r'},
@@ -798,14 +857,14 @@ function buildWinsteps(D){
           im=arr.map(a=>a.infit), iz=arr.map(a=>a.zin), om=arr.map(a=>a.outfit), oz=arr.map(a=>a.zout);
     const agg=(v,f)=>f(v);
     const sd=v=>{const mm=mean(v);return Math.sqrt(v.reduce((s,x)=>s+(x-mm)*(x-mm),0)/v.length);};
-    const mkRow=(tag,f)=>[tag.padEnd(0), nf(f(tot),1),nf(f(cnt),1),nf(f(me),2),nf(f(se),2),nf(f(im),2),nf(f(iz),1),nf(f(om),2),nf(f(oz),1)];
+    const mkRow=(tag,f)=>[tag.padEnd(0), nf(f(tot),1),nf(f(cnt),1),nf(f(me),2),nf(f(se),2),nf(f(im),2),nf(f(iz),2),nf(f(om),2),nf(f(oz),2)];
     // first label column added separately -> prepend a tag column
     const cols2=[{t1:"",t2:"",w:6,a:'l'}].concat(cols);
     const rows=[
       mkRow("MEAN",mean),mkRow("S.D.",sd),
       mkRow("MAX.",v=>Math.max(...v)),mkRow("MIN.",v=>Math.min(...v))];
     let out=`SUMMARY OF ${labelN} MEASURED ${kind}\n`+makeTbl(cols2,rows)+"\n";
-    const model=relFrom(arr,a=>a.se), real=relFrom(arr,a=>a.se*Math.sqrt(Math.max(a.infit,1)));
+    const model=relStats(arr,a=>a.se), real=relStats(arr,a=>a.se*Math.sqrt(Math.max(a.infit,1)));
     const lab=kind==='PERSON'?'PERSON':'ITEM';
     out+=`REAL  RMSE ${nf(real.rmse,2)}  TRUE SD ${nf(real.tsd,2)}  SEPARATION ${nf(real.sep,2)}  ${lab} RELIABILITY ${nf(real.rel,2)}\n`;
     out+=`MODEL RMSE ${nf(model.rmse,2)}  TRUE SD ${nf(model.tsd,2)}  SEPARATION ${nf(model.sep,2)}  ${lab} RELIABILITY ${nf(model.rel,2)}\n`;
@@ -822,19 +881,19 @@ function buildWinsteps(D){
     {t1:"EXACT",t2:"OBS%",w:6,a:'r',div:true},{t1:"MATCH",t2:"EXP%",w:6,a:'r'},
     {t1:"",t2:"ITEM",w:14,a:'l',div:true}];
   const itemRow=it=>[it.i+1, it.total + it.count * lo, it.count, nf(it.measure,2), nf(it.se,2),
-    nf(it.infit,2), nf(it.zin,1), nf(it.outfit,2), nf(it.zout,1),
+    nf(it.infit,2), nf(it.zin,2), nf(it.outfit,2), nf(it.zout,2),
     nf(it.pm,2), nf(itemExtra[it.i].epm,2), nf(itemExtra[it.i].obs,1), nf(itemExtra[it.i].exp,1), it.name+(it.extreme?" (EXTREME)":"")];
   const personCols=[
     {t1:"ENTRY",t2:"NUMBER",w:7,a:'r'},{t1:"TOTAL",t2:"SCORE",w:7,a:'r'},{t1:"TOTAL",t2:"COUNT",w:7,a:'r'},
     {t1:"",t2:"MEASURE",w:9,a:'r'},{t1:"MODEL",t2:"S.E.",w:7,a:'r'},
     {t1:"INFIT",t2:"MNSQ",w:6,a:'r',div:true},{t1:"",t2:"ZSTD",w:6,a:'r'},
     {t1:"OUTFIT",t2:"MNSQ",w:6,a:'r',div:true},{t1:"",t2:"ZSTD",w:6,a:'r'},
-    {t1:"PTMEA",t2:"CORR.",w:6,a:'r',div:true},
+    {t1:"PTMEA",t2:"CORR.",w:6,a:'r',div:true},{t1:"",t2:"EXP.",w:6,a:'r'},
     {t1:"EXACT",t2:"OBS%",w:6,a:'r',div:true},{t1:"MATCH",t2:"EXP%",w:6,a:'r'},
     {t1:"",t2:"PERSON",w:14,a:'l',div:true}];
   const personRow=p=>[p.n+1, p.raw + p.count * lo, p.count, nf(p.measure,2), nf(p.se,2),
-    nf(p.infit,2), nf(p.zin,1), nf(p.outfit,2), nf(p.zout,1),
-    nf(persExtra[p.n].pm,2), nf(persExtra[p.n].obs,1), nf(persExtra[p.n].exp,1), String(p.id)+(p.extreme?" (EXTREME)":"")];
+    nf(p.infit,2), nf(p.zin,2), nf(p.outfit,2), nf(p.zout,2),
+    nf(persExtra[p.n].pm,2), nf(persExtra[p.n].epm,2), nf(persExtra[p.n].obs,1), nf(persExtra[p.n].exp,1), String(p.id)+(p.extreme?" (EXTREME)":"")];
 
   const itemsM=A.item.slice().sort((a,b)=>b.measure-a.measure);
   const itemsE=A.item.slice().sort((a,b)=>a.i-b.i);
@@ -846,10 +905,12 @@ function buildWinsteps(D){
     {t1:"CATEGORY",t2:"LABEL",w:9,a:'r'},{t1:"OBSERVED",t2:"COUNT",w:9,a:'r'},{t1:"",t2:"%",w:6,a:'r'},
     {t1:"OBSVD",t2:"AVRGE",w:8,a:'r',div:true},{t1:"SAMPLE",t2:"EXPECT",w:8,a:'r'},
     {t1:"INFIT",t2:"MNSQ",w:7,a:'r',div:true},{t1:"OUTFIT",t2:"MNSQ",w:7,a:'r'},
-    {t1:"STRUCTURE",t2:"CALIBRATN",w:10,a:'r',div:true},{t1:"CATEGORY",t2:"MEASURE",w:9,a:'r'}];
-  const catRows=A.category.map(c=>[c.cat+lo, c.count, nf(c.pct,1),
+    {t1:"ANDRICH",t2:"THRESHOLD",w:10,a:'r',div:true},{t1:"CATEGORY",t2:"MEASURE",w:9,a:'r'},
+    {t1:"50% CUM.",t2:"PROB.",w:9,a:'r'}];
+  const catRows=A.category.map(c=>[c.cat+lo, c.count, nf(c.pct,0),
     nf(c.avg,2), nf(c.expect,2), nf(c.infit,2), nf(c.outfit,2),
-    c.threshold==null?"NONE":nf(c.threshold,2), c.catMeasure==null?"( )":nf(c.catMeasure,2)]);
+    c.threshold==null?"NONE":nf(c.threshold,2), nf(c.catMeasure,2),
+    c.cumulative50==null?"":nf(c.cumulative50,2)]);
 
   // ---- assemble ----
   const L="=".repeat(80);
@@ -898,7 +959,7 @@ $("file").onchange=e=>{const f=e.target.files[0];if(!f)return;$("fileName").text
 $("runBtn").onclick=run;
 $("exampleBtn").onclick=()=>{
   // 24 responden × 8 butir, skala 1–5; B6 sengaja "berisik" (misfit) & B3 reverse-like
-  $("data").value=EXAMPLE; $("hasHeader").checked=true; $("hasId").checked=true; $("revItems").value="";
+  $("data").value=EXAMPLE; $("hasHeader").checked=true; $("hasId").checked=true; $("revItems").value=""; $("scaleRange").value="";
   $("fileName").textContent="(data contoh dimuat)";
 };
 const EXAMPLE=`ID,B1,B2,B3,B4,B5,B6,B7,B8
